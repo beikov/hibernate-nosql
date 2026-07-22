@@ -53,6 +53,8 @@ import org.hibernate.milvus.jdbc.MilvusStringValue;
 import org.hibernate.milvus.jdbc.MilvusTypedValue;
 import org.hibernate.milvus.jdbc.MilvusUpsert;
 import org.hibernate.milvus.jdbc.MilvusWeightedRanker;
+import org.hibernate.sql.ast.spi.StringBuilderSqlAppender;
+import org.hibernate.type.descriptor.DateTimeUtils;
 import org.jetbrains.annotations.NotNull;
 
 import java.sql.Array;
@@ -72,17 +74,26 @@ import java.sql.SQLXML;
 import java.sql.Savepoint;
 import java.sql.Statement;
 import java.sql.Struct;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.TimeZone;
 import java.util.concurrent.Executor;
 
 public class MilvusConnection implements Connection {
 
 	private final static char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
+	private static final TimeZone GMT = TimeZone.getTimeZone("GMT");
 
 	final MilvusClientV2 client;
 	final String url;
@@ -151,6 +162,8 @@ public class MilvusConnection implements Connection {
 		}
 
 		if ( createCollection.indexParams() != null ) {
+			final var indexBuilder = CreateIndexReq.builder();
+			indexBuilder.collectionName( createCollection.collectionName() );
 			for ( MilvusCreateCollection.IndexParam indexParam : createCollection.indexParams() ) {
 				IndexParam.IndexParamBuilder indexParamBuilder = IndexParam.builder();
 				if ( indexParam.fieldName() != null ) {
@@ -220,60 +233,6 @@ public class MilvusConnection implements Connection {
 		}
 
 		client.createCollection( builder.build() );
-
-
-		CreateIndexReq.CreateIndexReqBuilder indexBuilder;
-		IndexParam.IndexParamBuilder indexParamBuilder;
-		for ( MilvusCreateCollection.FieldSchema fieldSchema : createCollection.collectionSchema().fieldSchemaList() ) {
-			if ( fieldSchema.isPrimaryKey() ) {
-				indexBuilder = CreateIndexReq.builder();
-				indexParamBuilder = IndexParam.builder();
-				indexParamBuilder.fieldName( fieldSchema.name() );
-				indexParamBuilder.indexName( fieldSchema.name() + "_idx" );
-				indexBuilder.collectionName( createCollection.collectionName() );
-				indexBuilder.indexParams( List.of( indexParamBuilder.build() ) );
-				client.createIndex( indexBuilder.build() );
-			}
-			switch ( fieldSchema.dataType() ) {
-				case FloatVector, BFloat16Vector, Float16Vector, SparseFloatVector:
-					indexBuilder = CreateIndexReq.builder();
-					indexBuilder.collectionName( createCollection.collectionName() );
-					indexParamBuilder = IndexParam.builder();
-					indexParamBuilder.fieldName( fieldSchema.name() );
-
-					// todo (milvus): Unfortunately, Milvus only supports a single index on a field,
-					//  so for now we create the inner product,
-					//  because that seems to be the only one that works
-
-//					indexParamBuilder.indexName( fieldSchema.name() + "_cosine" );
-//					indexParamBuilder.metricType( IndexParam.MetricType.COSINE );
-//					indexBuilder.indexParams( List.of( indexParamBuilder.build() ) );
-//					client.createIndex( indexBuilder.build() );
-
-					indexParamBuilder.indexName( fieldSchema.name() + "_ip" );
-					indexParamBuilder.metricType( IndexParam.MetricType.IP );
-					indexBuilder.indexParams( List.of( indexParamBuilder.build() ) );
-					client.createIndex( indexBuilder.build() );
-//
-//					indexParamBuilder.indexName( fieldSchema.name() + "_l2" );
-//					indexParamBuilder.metricType( IndexParam.MetricType.L2 );
-//					indexBuilder.indexParams( List.of( indexParamBuilder.build() ) );
-//					client.createIndex( indexBuilder.build() );
-					break;
-				case BinaryVector:
-					indexBuilder = CreateIndexReq.builder();
-					indexBuilder.collectionName( createCollection.collectionName() );
-					indexParamBuilder = IndexParam.builder();
-					indexParamBuilder.fieldName( fieldSchema.name() );
-
-					indexParamBuilder.indexName( fieldSchema.name() + "_hamming" );
-					indexParamBuilder.metricType( IndexParam.MetricType.HAMMING );
-					indexBuilder.indexParams( List.of( indexParamBuilder.build() ) );
-					client.createIndex( indexBuilder.build() );
-					break;
-			}
-		}
-
 		client.loadCollection( LoadCollectionReq.builder().collectionName( createCollection.collectionName() ).build() );
 	}
 
@@ -426,6 +385,46 @@ public class MilvusConnection implements Connection {
 		}
 		else if ( parameterValue instanceof Boolean bool ) {
 			return new JsonPrimitive( bool );
+		}
+		else if ( parameterValue instanceof java.util.Date date ) {
+			StringBuilderSqlAppender sb = new StringBuilderSqlAppender();
+			DateTimeUtils.appendAsTimestampWithMillis( sb, date, GMT );
+			return new JsonPrimitive( sb.toString() );
+		}
+		else if ( parameterValue instanceof java.util.Calendar calendar ) {
+			StringBuilderSqlAppender sb = new StringBuilderSqlAppender();
+			DateTimeUtils.appendAsTimestampWithMillis( sb, calendar, GMT );
+			return new JsonPrimitive( sb.toString() );
+		}
+		else if ( parameterValue instanceof LocalDate date ) {
+			StringBuilderSqlAppender sb = new StringBuilderSqlAppender();
+			DateTimeUtils.appendAsTimestampWithMillis( sb, OffsetDateTime.of( date, LocalTime.MIN, ZoneOffset.UTC ), true, GMT );
+			return new JsonPrimitive( sb.toString() );
+		}
+		else if ( parameterValue instanceof LocalTime time ) {
+			StringBuilderSqlAppender sb = new StringBuilderSqlAppender();
+			DateTimeUtils.appendAsTimestampWithMillis( sb, OffsetDateTime.of( LocalDate.EPOCH, time, ZoneOffset.UTC ), true, GMT );
+			return new JsonPrimitive( sb.toString() );
+		}
+		else if ( parameterValue instanceof LocalDateTime dateTime ) {
+			StringBuilderSqlAppender sb = new StringBuilderSqlAppender();
+			DateTimeUtils.appendAsTimestampWithMillis( sb, OffsetDateTime.of( dateTime, ZoneOffset.UTC ), true, GMT );
+			return new JsonPrimitive( sb.toString() );
+		}
+		else if ( parameterValue instanceof Instant instant ) {
+			StringBuilderSqlAppender sb = new StringBuilderSqlAppender();
+			DateTimeUtils.appendAsTimestampWithMillis( sb, instant, true, GMT );
+			return new JsonPrimitive( sb.toString() );
+		}
+		else if ( parameterValue instanceof OffsetDateTime offsetDateTime ) {
+			StringBuilderSqlAppender sb = new StringBuilderSqlAppender();
+			DateTimeUtils.appendAsTimestampWithMillis( sb, offsetDateTime, true, GMT );
+			return new JsonPrimitive( sb.toString() );
+		}
+		else if ( parameterValue instanceof ZonedDateTime zonedDateTime ) {
+			StringBuilderSqlAppender sb = new StringBuilderSqlAppender();
+			DateTimeUtils.appendAsTimestampWithMillis( sb, zonedDateTime.toInstant(), true, GMT );
+			return new JsonPrimitive( sb.toString() );
 		}
 		else if ( parameterValue instanceof MilvusArray array ) {
 			final Object[] objects = (Object[]) array.getArray();
@@ -629,14 +628,22 @@ public class MilvusConnection implements Connection {
 		// Search specific
 		if ( query.getAnnsField() != null ) {
 			// When an annsField is given, we do vector search, but we have to remove "distance" from the output fields
-			if ( query.getOutputFields() != null && query.getOutputFields().contains( MilvusHelper.DISTANCE_FIELD ) ) {
-				final ArrayList<String> outputFields = new ArrayList<>( query.getOutputFields().size() - 1 );
-				for ( String outputField : query.getOutputFields() ) {
-					if ( !MilvusHelper.DISTANCE_FIELD.equals( outputField ) ) {
-						outputFields.add( outputField );
+			if ( query.getOutputFields() != null ) {
+				final String fieldToRemove = query.getOutputFields().contains( MilvusHelper.DISTANCE_FIELD )
+						? MilvusHelper.DISTANCE_FIELD
+						: query.getOutputFields().contains( MilvusHelper.COSINE_DISTANCE_FIELD )
+								? MilvusHelper.COSINE_DISTANCE_FIELD
+								: query.getOutputFields().contains( MilvusHelper.EUCLIDEAN_DISTANCE_FIELD )
+										? MilvusHelper.EUCLIDEAN_DISTANCE_FIELD : null;
+				if ( fieldToRemove != null ) {
+					final ArrayList<String> outputFields = new ArrayList<>( query.getOutputFields().size() - 1 );
+					for ( String outputField : query.getOutputFields() ) {
+						if ( !fieldToRemove.equals( outputField ) ) {
+							outputFields.add( outputField );
+						}
 					}
+					builder.outputFields( outputFields );
 				}
-				builder.outputFields( outputFields );
 			}
 			builder.annsField( query.getAnnsField() );
 		}

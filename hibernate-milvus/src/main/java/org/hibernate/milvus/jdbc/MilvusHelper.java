@@ -14,6 +14,8 @@ import static org.hibernate.internal.util.NullnessUtil.castNonNull;
 public final class MilvusHelper {
 
 	public static final String DISTANCE_FIELD = "<>";
+	public static final String COSINE_DISTANCE_FIELD = "<=>";
+	public static final String EUCLIDEAN_DISTANCE_FIELD = "<->";
 
 	private MilvusHelper() {
 	}
@@ -28,8 +30,10 @@ public final class MilvusHelper {
 			case "bigint" -> DataType.Int64;
 			case "float", "real" -> DataType.Float;
 			case "double precision" -> DataType.Double;
+			case "timestamptz" -> DataType.Timestamptz;
 			case "json" -> DataType.JSON;
 			case "binary_vector" -> DataType.BinaryVector;
+			case "byte_vector" -> DataType.Int8Vector;
 			case "float_vector" -> DataType.FloatVector;
 			case "float16_vector" -> DataType.Float16Vector;
 			case "bfloat16_vector" -> DataType.BFloat16Vector;
@@ -43,14 +47,16 @@ public final class MilvusHelper {
 			case Array -> toSqlType( castNonNull( elementType ) , null ) + " array";
 			case VarChar -> "varchar";
 			case Bool -> "boolean";
-			case Int8 ->"tinyint";
-			case Int16 ->"smallint";
-			case Int32 ->"integer";
-			case Int64 ->"bigint";
+			case Int8 -> "tinyint";
+			case Int16 -> "smallint";
+			case Int32 -> "integer";
+			case Int64 -> "bigint";
 			case Float -> "float";
+			case Timestamptz -> "timestamptz";
 			case Double -> "double precision";
 			case JSON -> "json";
 			case BinaryVector -> "binary_vector";
+			case Int8Vector -> "byte_vector";
 			case FloatVector -> "float_vector";
 			case Float16Vector -> "float16_vector";
 			case BFloat16Vector -> "bfloat16_vector";
