@@ -26,8 +26,13 @@ public class MilvusSearchResultSet extends AbstractMilvusResultSet {
 	@Override
 	protected Object getField(int position, String field) {
 		SearchResp.SearchResult queryResult = searchResp.getSearchResults().get( 0 ).get( position );
-		return MilvusHelper.DISTANCE_FIELD.equals( field )
-				? queryResult.getScore().doubleValue()
-				: queryResult.getEntity().get( field );
+		return switch (field) {
+			// Milvus returns the euclidean squared distance to avoid taking the square root
+			case MilvusHelper.EUCLIDEAN_DISTANCE_FIELD -> Math.sqrt( queryResult.getScore().doubleValue() );
+			// Cosine is given as similarity in the range [-1..1], but we need the distance in [0..2] here
+			case MilvusHelper.COSINE_DISTANCE_FIELD -> 1D - queryResult.getScore().doubleValue();
+			case MilvusHelper.DISTANCE_FIELD -> queryResult.getScore().doubleValue();
+			default -> queryResult.getEntity().get( field );
+		};
 	}
 }

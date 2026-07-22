@@ -55,12 +55,15 @@ public class MilvusDriver implements Driver {
 		if ( port == -1 ) {
 			port = 19530;
 		}
-
-		ConnectConfig connectConfig = ConnectConfig.builder()
-				.uri( (secure == Boolean.TRUE ? "https" : "http" ) + "://" + host + ":" + port )
-				.username( userName )
-				.password( password )
-				.dbName( database )
+		ConnectConfig.ConnectConfigBuilder builder = ConnectConfig.builder()
+				.uri( (secure == Boolean.TRUE ? "https" : "http") + "://" + host + ":" + port );
+		if ( userName != null ) {
+			builder.username( userName );
+		}
+		if ( password != null ) {
+			builder.password( password );
+		}
+		ConnectConfig connectConfig = builder.dbName( database )
 				.secure( secure == Boolean.TRUE )
 				.build();
 		return new MilvusConnection( new MilvusClientV2( connectConfig ), url, userName );

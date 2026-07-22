@@ -4,6 +4,7 @@
  */
 package org.hibernate.milvus.jdbc.internal;
 
+import jakarta.annotation.Nullable;
 import org.hibernate.internal.build.AllowReflection;
 
 import java.io.ByteArrayInputStream;
@@ -32,12 +33,20 @@ import java.sql.SQLXML;
 import java.sql.Statement;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
 
 public abstract class AbstractResultSet<T extends Statement> implements ResultSet {
 
+	private static final ZoneId UTC = ZoneId.of("UTC");
 	protected final T statement;
 
 	private int fetchDirection;
@@ -403,9 +412,8 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 		else if ( value instanceof Date ) {
 			return (Date) value;
 		}
-		// todo (milvus): emulate?
 		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+			return getObject( value, Date.class );
 		}
 	}
 
@@ -416,9 +424,8 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 		else if ( value instanceof Time ) {
 			return (Time) value;
 		}
-		// todo (milvus): emulate?
 		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+			return getObject( value, Time.class );
 		}
 	}
 
@@ -429,9 +436,8 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 		else if ( value instanceof Timestamp ) {
 			return (Timestamp) value;
 		}
-		// todo (milvus): emulate?
 		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+			return getObject( value, Timestamp.class );
 		}
 	}
 
@@ -586,9 +592,8 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 		else if ( value instanceof Date ) {
 			return (Date) value;
 		}
-		// todo (milvus): emulate?
 		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+			return getObject( value, Date.class, cal );
 		}
 	}
 
@@ -599,9 +604,8 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 		else if ( value instanceof Time ) {
 			return (Time) value;
 		}
-		// todo (milvus): emulate?
 		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+			return getObject( value, Time.class, cal );
 		}
 	}
 
@@ -612,9 +616,8 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 		else if ( value instanceof Timestamp ) {
 			return (Timestamp) value;
 		}
-		// todo (milvus): emulate?
 		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+			return getObject( value, Timestamp.class, cal );
 		}
 	}
 
@@ -666,11 +669,15 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 		}
 	}
 
+	private <T> T getObject(Object value, Class<T> type) throws SQLException {
+		return getObject( value, type, null );
+	}
+
 	// TODO Christian make sure reflection is correctly registered for the relevant types.
 	//   Typically this is done by exposing the array types in here:
 	//   https://github.com/hibernate/hibernate-nosql/blob/018b8eeda3627e114ec25bd48407ccb9c47564ce/hibernate-graalvm/src/main/java/org/hibernate/graalvm/internal/StaticClassLists.java#L42
 	@AllowReflection
-	private <T> T getObject(Object value, Class<T> type) throws SQLException {
+	private <T> T getObject(Object value, Class<T> type, @Nullable Calendar cal) throws SQLException {
 		if ( value == null ) {
 			return null;
 		}
@@ -688,8 +695,65 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 			return type.cast( array );
 		}
 		else {
+			if ( value instanceof String string ) {
+				if ( type == Date.class ) {
+					final ZonedDateTime zonedDateTime = parseTimestamp( string, cal );
+					//noinspection unchecked
+					return (T) Date.valueOf( zonedDateTime.toLocalDate() );
+				}
+				else if ( type == Time.class ) {
+					final ZonedDateTime zonedDateTime = parseTimestamp( string, cal );
+					//noinspection unchecked
+					return (T) Time.valueOf( zonedDateTime.toLocalTime() );
+				}
+				else if ( type == Timestamp.class ) {
+					final ZonedDateTime zonedDateTime = parseTimestamp( string, cal );
+					//noinspection unchecked
+					return (T) Timestamp.valueOf( zonedDateTime.toLocalDateTime() );
+				}
+				else if ( type == Calendar.class ) {
+					final ZonedDateTime zonedDateTime = parseTimestamp( string, cal );
+					final Timestamp timestamp = Timestamp.valueOf( zonedDateTime.toLocalDateTime() );
+					final Calendar calendar = Calendar.getInstance();
+					calendar.setTime( timestamp );
+					//noinspection unchecked
+					return (T) calendar;
+				}
+				else if ( type == LocalDate.class ) {
+					final ZonedDateTime zonedDateTime = parseTimestamp( string, cal );
+					//noinspection unchecked
+					return (T) zonedDateTime.toLocalDate();
+				}
+				else if ( type == LocalTime.class ) {
+					final ZonedDateTime zonedDateTime = parseTimestamp( string, cal );
+					//noinspection unchecked
+					return (T) zonedDateTime.toLocalTime();
+				}
+				else if ( type == LocalDateTime.class ) {
+					final ZonedDateTime zonedDateTime = parseTimestamp( string, cal );
+					//noinspection unchecked
+					return (T) zonedDateTime.toLocalDateTime();
+				}
+				else if ( type == Instant.class ) {
+					final ZonedDateTime zonedDateTime = parseTimestamp( string, cal );
+					//noinspection unchecked
+					return (T) zonedDateTime.toInstant();
+				}
+				else if ( type == OffsetDateTime.class ) {
+					final ZonedDateTime zonedDateTime = parseTimestamp( string, cal );
+					//noinspection unchecked
+					return (T) zonedDateTime.toOffsetDateTime();
+				}
+			}
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
 		}
+	}
+
+	private static ZonedDateTime parseTimestamp(String timestamp, @Nullable Calendar calendar) {
+		ZoneId zoneId = calendar == null || calendar.getTimeZone() == null
+				? UTC
+				: calendar.getTimeZone().toZoneId();
+		return Instant.parse( timestamp ).atZone( zoneId );
 	}
 
 	// -------------- Index-based Read APIs

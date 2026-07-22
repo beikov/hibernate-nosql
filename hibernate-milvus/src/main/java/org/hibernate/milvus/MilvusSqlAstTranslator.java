@@ -12,6 +12,9 @@ import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.internal.util.MathHelper;
 import org.hibernate.internal.util.collections.Stack;
 import org.hibernate.metamodel.mapping.EntityIdentifierMapping;
+import org.hibernate.metamodel.mapping.EntityMappingType;
+import org.hibernate.metamodel.mapping.JdbcMapping;
+import org.hibernate.metamodel.mapping.JdbcMappingContainer;
 import org.hibernate.metamodel.mapping.ModelPartContainer;
 import org.hibernate.metamodel.mapping.SelectableMapping;
 import org.hibernate.milvus.jdbc.AbstractMilvusCollectionStatement;
@@ -23,6 +26,7 @@ import org.hibernate.milvus.jdbc.MilvusHelper;
 import org.hibernate.milvus.jdbc.MilvusHybridAnnSearch;
 import org.hibernate.milvus.jdbc.MilvusHybridSearch;
 import org.hibernate.milvus.jdbc.MilvusInsert;
+import org.hibernate.milvus.jdbc.MilvusInsertOrUpdate;
 import org.hibernate.milvus.jdbc.MilvusJsonHelper;
 import org.hibernate.milvus.jdbc.MilvusNumberValue;
 import org.hibernate.milvus.jdbc.MilvusParameterValue;
@@ -57,6 +61,7 @@ import org.hibernate.sql.ast.tree.from.TableGroup;
 import org.hibernate.sql.ast.tree.from.TableReferenceJoin;
 import org.hibernate.sql.ast.tree.from.ValuesTableReference;
 import org.hibernate.sql.ast.tree.insert.InsertSelectStatement;
+import org.hibernate.sql.ast.tree.insert.Values;
 import org.hibernate.sql.ast.tree.predicate.BetweenPredicate;
 import org.hibernate.sql.ast.tree.predicate.BooleanExpressionPredicate;
 import org.hibernate.sql.ast.tree.predicate.ComparisonPredicate;
@@ -76,7 +81,14 @@ import org.hibernate.sql.ast.tree.select.SelectStatement;
 import org.hibernate.sql.ast.tree.select.SortSpecification;
 import org.hibernate.sql.ast.tree.update.Assignment;
 import org.hibernate.sql.ast.tree.update.UpdateStatement;
+import org.hibernate.sql.exec.ExecutionException;
+import org.hibernate.sql.exec.internal.AbstractJdbcParameter;
+import org.hibernate.sql.exec.internal.SqlTypedMappingJdbcParameter;
+import org.hibernate.sql.exec.spi.ExecutionContext;
 import org.hibernate.sql.exec.spi.JdbcOperation;
+import org.hibernate.sql.exec.spi.JdbcParameterBinder;
+import org.hibernate.sql.exec.spi.JdbcParameterBinding;
+import org.hibernate.sql.exec.spi.JdbcParameterBindings;
 import org.hibernate.sql.model.ast.ColumnValueParameter;
 import org.hibernate.sql.model.ast.ColumnWriteFragment;
 import org.hibernate.sql.model.internal.OptionalTableUpdate;
@@ -90,6 +102,11 @@ import org.hibernate.type.BasicPluralType;
 import org.hibernate.type.SqlTypes;
 
 import java.lang.reflect.Field;
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -191,7 +208,48 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 	@Override
 	public void visitInsertStatement(InsertSelectStatement statement) {
-		throw new UnsupportedOperationException();
+		if (statement.getSourceSelectStatement() != null) {
+			throw new UnsupportedOperationException();
+		}
+		getCurrentClauseStack().push( Clause.INSERT );
+		try {
+			MilvusInsert insert = new MilvusInsert();
+			milvusStatement = insert;
+
+			insert.setCollectionName( statement.getMutationTarget().getIdentifierTableName() );
+			registerAffectedTable( statement.getTargetTable() );
+
+			getCurrentClauseStack().push( Clause.VALUES );
+			try {
+				final List<ColumnReference> targetColumns = statement.getTargetColumns();
+				for ( Values values : statement.getValuesList() ) {
+					final Map<String, MilvusTypedValue> valueMap = new LinkedHashMap<>();
+					final List<Expression> expressions = values.getExpressions();
+					for ( int i = 0; i < expressions.size(); i++ ) {
+						final Expression valueExpression = expressions.get( i );
+						if ( !isParameter( valueExpression ) ) {
+							throw new UnsupportedOperationException( "Need a parameter expression for inserts" );
+						}
+						valueMap.put( targetColumns.get( i ).getColumnReference().getColumnExpression(),
+								renderValue( valueExpression ) );
+					}
+					if ( !hasVector( statement.getMutationTarget().getTargetPart() ) ) {
+						valueMap.put( "embedding", new MilvusFloatVectorValue( new float[]{ 0, 0 } ) );
+					}
+					insert.getData().add( valueMap );
+				}
+			}
+			finally {
+				getCurrentClauseStack().pop();
+			}
+
+			if ( !statement.getReturningColumns().isEmpty() ) {
+				visitReturningColumns( statement::getReturningColumns );
+			}
+		}
+		finally {
+			getCurrentClauseStack().pop();
+		}
 	}
 
 	@Override
@@ -343,13 +401,13 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 		if ( lhs instanceof FunctionExpression functionExpression
 			&& (distanceFunctionKind = getDistanceFunctionKind( functionExpression )) != null ) {
 			addVectorSearch( distanceFunctionKind, functionExpression );
-			addVectorSearchPredicate( rhs, operator );
+			addVectorSearchPredicate( rhs, operator, distanceFunctionKind );
 			appendSql( TRUE_CONSTANT );
 		}
 		else if ( rhs instanceof FunctionExpression functionExpression
 			&& (distanceFunctionKind = getDistanceFunctionKind( functionExpression )) != null ) {
 			addVectorSearch( distanceFunctionKind, functionExpression );
-			addVectorSearchPredicate( lhs, operator.invert() );
+			addVectorSearchPredicate( lhs, operator.invert(), distanceFunctionKind );
 			appendSql( TRUE_CONSTANT );
 		}
 		else {
@@ -405,23 +463,27 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	protected void visitParameterAsParameter(JdbcParameter jdbcParameter) {
 		final int position = getParameterBinders().size();
 		super.visitParameterAsParameter( jdbcParameter );
-		Map<String, MilvusTypedValue> filterTemplateValues;
+		Map<String, MilvusTypedValue> parameterRegistrations;
 		if ( milvusStatement instanceof AbstractMilvusQuery query ) {
-			filterTemplateValues = query.getFilterTemplateValues();
-			if ( filterTemplateValues == null ) {
-				query.setFilterTemplateValues( filterTemplateValues = new LinkedHashMap<>() );
+			parameterRegistrations = query.getFilterTemplateValues();
+			if ( parameterRegistrations == null ) {
+				query.setFilterTemplateValues( parameterRegistrations = new LinkedHashMap<>() );
 			}
 		}
 		else if ( milvusStatement instanceof MilvusDelete delete ) {
-			filterTemplateValues = delete.getFilterTemplateValues();
-			if ( filterTemplateValues == null ) {
-				delete.setFilterTemplateValues( filterTemplateValues = new LinkedHashMap<>() );
+			parameterRegistrations = delete.getFilterTemplateValues();
+			if ( parameterRegistrations == null ) {
+				delete.setFilterTemplateValues( parameterRegistrations = new LinkedHashMap<>() );
 			}
+		}
+		else if ( milvusStatement instanceof MilvusInsertOrUpdate ) {
+			// Insert/Update parameter positions are captured in #renderValue
+			return;
 		}
 		else {
 			throw new UnsupportedOperationException( "Unsupported statement: " + milvusStatement );
 		}
-		filterTemplateValues.put( "p" + getParameterBinders().size(), new MilvusParameterValue( position ) );
+		parameterRegistrations.put( "p" + getParameterBinders().size(), new MilvusParameterValue( position ) );
 	}
 
 	@Override
@@ -600,8 +662,16 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 		if ( expression instanceof FunctionExpression functionExpression
 			&& (distanceFunctionKind = getDistanceFunctionKind( functionExpression )) != null ) {
 			addVectorSearch( distanceFunctionKind, functionExpression );
-			addVectorSearchPredicate( betweenPredicate.getLowerBound(), ComparisonOperator.GREATER_THAN_OR_EQUAL );
-			addVectorSearchPredicate( betweenPredicate.getUpperBound(), ComparisonOperator.LESS_THAN_OR_EQUAL );
+			addVectorSearchPredicate(
+					betweenPredicate.getLowerBound(),
+					ComparisonOperator.GREATER_THAN_OR_EQUAL,
+					distanceFunctionKind
+			);
+			addVectorSearchPredicate(
+					betweenPredicate.getUpperBound(),
+					ComparisonOperator.LESS_THAN_OR_EQUAL,
+					distanceFunctionKind
+			);
 			appendSql( TRUE_CONSTANT );
 			return;
 		}
@@ -803,7 +873,15 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 			if ( milvusQuery.getOutputFields() == null ) {
 				milvusQuery.setOutputFields( new ArrayList<>() );
 			}
-			milvusQuery.getOutputFields().add( MilvusHelper.DISTANCE_FIELD );
+			if ( distanceFunctionKind == DistanceFunctionKind.COSINE ) {
+				milvusQuery.getOutputFields().add( MilvusHelper.COSINE_DISTANCE_FIELD );
+			}
+			else if ( distanceFunctionKind == DistanceFunctionKind.EUCLIDEAN ) {
+				milvusQuery.getOutputFields().add( MilvusHelper.EUCLIDEAN_DISTANCE_FIELD );
+			}
+			else {
+				milvusQuery.getOutputFields().add( MilvusHelper.DISTANCE_FIELD );
+			}
 			addVectorSearch( distanceFunctionKind, functionExpression );
 		}
 		else {
@@ -873,7 +951,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 			&& existingJdbcParameter.getParameterId().equals( newJdbcParameter.getParameterId() );
 	}
 
-	private void addVectorSearchPredicate(Expression expression, ComparisonOperator operator) {
+	private void addVectorSearchPredicate(Expression expression, ComparisonOperator operator, DistanceFunctionKind distanceFunctionKind) {
 		final MilvusSearchRequest searchRequest;
 		if ( milvusStatement instanceof MilvusHybridSearch hybridSearch ) {
 			searchRequest = hybridSearch.getSearches().get( hybridSearch.getSearches().size() - 1 );
@@ -885,50 +963,337 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 		if ( searchParams == null ) {
 			searchRequest.setSearchParams( searchParams = new HashMap<>( 2 ) );
 		}
-		switch ( operator ) {
-			case NOT_EQUAL, DISTINCT_FROM -> throw new UnsupportedOperationException("Milvus does not support unequal operator for distance");
-			case EQUAL, NOT_DISTINCT_FROM -> {
-				searchParams.put( "radius", renderValue( expression ) );
-				searchParams.put( "range_filter", renderValue( expression ) );
-			}
-			case GREATER_THAN, GREATER_THAN_OR_EQUAL -> searchParams.put( "radius", renderValue( expression ) );
-			case LESS_THAN, LESS_THAN_OR_EQUAL -> searchParams.put( "range_filter", renderValue( expression ) );
+		final MilvusTypedValue expressionTypedValue = renderValue( expression );
+		// Have to invert the operator for COSINE distance, because Milvus uses COSINE similarity which is the opposite
+		// of COSINE distance i.e. similarity 0 in the range [0..2] has a score of 1,
+		// whereas distance 1 in the range [-1..1] has a score of 1.
+		final ComparisonOperator op = distanceFunctionKind == DistanceFunctionKind.COSINE ? operator.invert() : operator;
+		final MilvusTypedValue radius =
+				distanceFunctionKind.determineRadius( expressionTypedValue, op, getParameterBinders() );
+		final MilvusTypedValue rangeFilter =
+				distanceFunctionKind.determineRangeFilter( expressionTypedValue, op, getParameterBinders() );
+		if ( radius != null ) {
+			searchParams.put( "radius", radius );
+		}
+		else {
+			searchParams.put( "radius", new MilvusNumberValue( switch ( distanceFunctionKind ) {
+				case COSINE, INNER_PRODUCT, NEGATIVE_INNER_PRODUCT -> -Double.MAX_VALUE;
+				default -> Double.MAX_VALUE;
+			} ) );
+		}
+		if ( rangeFilter != null ) {
+			searchParams.put( "range_filter", rangeFilter );
 		}
 	}
 
 	private DistanceFunctionKind getDistanceFunctionKind(FunctionExpression functionExpression) {
 		return switch ( functionExpression.getFunctionName() ) {
 			case "cosine_distance" -> DistanceFunctionKind.COSINE;
-			case "euclidean_distance" -> DistanceFunctionKind.L2;
+			case "euclidean_distance" -> DistanceFunctionKind.EUCLIDEAN;
+			case "euclidean_squared_distance" -> DistanceFunctionKind.EUCLIDEAN_SQUARED;
 			case "inner_product" -> DistanceFunctionKind.INNER_PRODUCT;
+			case "negative_inner_product" -> DistanceFunctionKind.NEGATIVE_INNER_PRODUCT;
 			case "hamming_distance" -> DistanceFunctionKind.HAMMING;
+			case "jaccard_distance" -> DistanceFunctionKind.JACCARD;
 			default -> null;
 		};
 	}
 
 	enum DistanceFunctionKind {
 		COSINE,
-		L2,
+		EUCLIDEAN,
+		EUCLIDEAN_SQUARED,
 		INNER_PRODUCT,
-		HAMMING;
+		NEGATIVE_INNER_PRODUCT,
+		HAMMING,
+		JACCARD;
 
 		public SortDirection getDefaultOrder() {
 			return switch ( this ) {
-				case COSINE, INNER_PRODUCT -> SortDirection.DESCENDING;
-				case L2, HAMMING -> SortDirection.ASCENDING;
+				case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT -> SortDirection.DESCENDING;
+				// Actually, Milvus returns cosine similarity in descending order,
+				// but we work with cosine distance in HQL, which has a better score the lower the value,
+				// hence ascending order. Note that the driver has to calculate the distance based on similarity later
+				case EUCLIDEAN, EUCLIDEAN_SQUARED, HAMMING, JACCARD, COSINE -> SortDirection.ASCENDING;
 			};
 		}
 
 		public IndexParam.MetricType getMetricType() {
 			return switch ( this ) {
 				case COSINE -> IndexParam.MetricType.COSINE;
-				case L2 -> IndexParam.MetricType.L2;
+				case EUCLIDEAN, EUCLIDEAN_SQUARED -> IndexParam.MetricType.L2;
 				case HAMMING -> IndexParam.MetricType.HAMMING;
-				case INNER_PRODUCT -> IndexParam.MetricType.IP;
+				case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT -> IndexParam.MetricType.IP;
+				case JACCARD -> IndexParam.MetricType.JACCARD;
 			};
 		}
-	}
 
+		private Function<Double, Float> distanceFilterValueTransformer(FloatOffset offset) {
+			// For some metrics, the radius or range_filter values must be transformed to match the Milvus value range,
+			// since they are passed in with the distance value range of the respective metric.
+			return switch ( this ) {
+				// Cosine distance is in the range [0..2] with 0 being a perfect match,
+				// whereas Milvus requires a similarity value in the range [-1..1] with 1 being a perfect match,
+				// so transform the distance to similarity with `1 - distance`
+				case COSINE -> distance -> offset.apply( 1D - distance );
+				// Emulate negative inner product by flipping the sign
+				case NEGATIVE_INNER_PRODUCT -> distance -> -(offset.apply(distance ));
+				// In Milvus, the euclidean distance is always squared, so square the square root distance value
+				case EUCLIDEAN -> distance -> offset.apply( Math.pow(distance, 2D) );
+				default -> offset::apply;
+			};
+		}
+
+		private JdbcParameterBinder wrapDistanceFilterParameterBinder(JdbcParameterBinder jdbcParameterBinder, Function<Double, Float> valueTransformer) {
+			if ( valueTransformer != null ) {
+				if ( jdbcParameterBinder instanceof SqlTypedMappingJdbcParameter parameter ) {
+					return new TransformingSqlTypedMappingJdbcParameter( parameter, valueTransformer );
+				}
+				else {
+					return new TransformingJdbcParameter( (JdbcParameter) jdbcParameterBinder, valueTransformer );
+				}
+			}
+			else {
+				return jdbcParameterBinder;
+			}
+		}
+
+		public MilvusTypedValue determineRadius(MilvusTypedValue expressionTypedValue, ComparisonOperator operator, List<JdbcParameterBinder> parameterBinders) {
+			// See https://milvus.io/docs/range-search.md
+			final FloatOffset offset = switch ( operator ) {
+				case NOT_EQUAL, DISTINCT_FROM -> throw new UnsupportedOperationException("Milvus does not support unequal operator for distance");
+				case EQUAL, NOT_DISTINCT_FROM -> switch ( this ) {
+					case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT, COSINE -> FloatOffset.PREVIOUS;
+					default -> FloatOffset.NEXT;
+				};
+				case GREATER_THAN -> switch ( this ) {
+					case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT, COSINE -> FloatOffset.ZERO;
+					default -> null;
+				};
+				case GREATER_THAN_OR_EQUAL -> switch ( this ) {
+					case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT, COSINE -> FloatOffset.PREVIOUS;
+					default -> null;
+				};
+				case LESS_THAN -> switch ( this ) {
+					case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT, COSINE -> null;
+					default -> FloatOffset.ZERO;
+				};
+				case LESS_THAN_OR_EQUAL -> switch ( this ) {
+					case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT, COSINE -> null;
+					default -> FloatOffset.PREVIOUS;
+				};
+			};
+			if ( offset != null ) {
+				final Function<Double, Float> distanceFilterValueTransformer = distanceFilterValueTransformer( offset );
+				if ( expressionTypedValue instanceof MilvusParameterValue parameterValue ) {
+					JdbcParameterBinder jdbcParameterBinder = parameterBinders.get( parameterValue.position() );
+					parameterBinders.set(
+							parameterValue.position(),
+							wrapDistanceFilterParameterBinder( jdbcParameterBinder, distanceFilterValueTransformer )
+					);
+					return expressionTypedValue;
+				}
+				else {
+					final MilvusNumberValue numberValue = (MilvusNumberValue) expressionTypedValue;
+					return new MilvusNumberValue(
+							distanceFilterValueTransformer.apply( numberValue.value().doubleValue() )
+					);
+				}
+			}
+			else {
+				return null;
+			}
+		}
+
+		public MilvusTypedValue determineRangeFilter(MilvusTypedValue expressionTypedValue, ComparisonOperator operator, List<JdbcParameterBinder> parameterBinders) {
+			// See https://milvus.io/docs/range-search.md
+			final FloatOffset offset = switch ( operator ) {
+				case NOT_EQUAL, DISTINCT_FROM -> throw new UnsupportedOperationException("Milvus does not support unequal operator for distance");
+				case EQUAL, NOT_DISTINCT_FROM -> FloatOffset.ZERO;
+				case GREATER_THAN -> switch ( this ) {
+					case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT, COSINE -> null;
+					default -> FloatOffset.NEXT;
+				};
+				case GREATER_THAN_OR_EQUAL -> switch ( this ) {
+					case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT, COSINE -> null;
+					default -> FloatOffset.ZERO;
+				};
+				case LESS_THAN -> switch ( this ) {
+					case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT, COSINE -> FloatOffset.NEXT;
+					default -> null;
+				};
+				case LESS_THAN_OR_EQUAL -> switch ( this ) {
+					case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT, COSINE -> FloatOffset.ZERO;
+					default -> null;
+				};
+			};
+			if ( offset != null ) {
+				final Function<Double, Float> distanceFilterValueTransformer = distanceFilterValueTransformer( offset );
+				if ( expressionTypedValue instanceof MilvusParameterValue parameterValue ) {
+					final JdbcParameterBinder jdbcParameterBinder = parameterBinders.get( parameterValue.position() );
+					final JdbcParameterBinder wrappedBinder =
+							wrapDistanceFilterParameterBinder( jdbcParameterBinder, distanceFilterValueTransformer );
+					if ( jdbcParameterBinder instanceof TransformingJdbcParameter
+							|| jdbcParameterBinder instanceof TransformingSqlTypedMappingJdbcParameter ) {
+						parameterBinders.add( parameterValue.position(), wrappedBinder );
+					}
+					else {
+						parameterBinders.set( parameterValue.position(), wrappedBinder );
+					}
+					return expressionTypedValue;
+				}
+				else {
+					final MilvusNumberValue numberValue = (MilvusNumberValue) expressionTypedValue;
+					return new MilvusNumberValue(
+							distanceFilterValueTransformer.apply( numberValue.value().doubleValue() )
+					);
+				}
+			}
+			else {
+				return null;
+			}
+		}
+
+		enum FloatOffset {
+			ZERO,
+			NEXT,
+			PREVIOUS;
+
+			public float apply(double f) {
+				return switch ( this ) {
+					case ZERO -> (float) f;
+					case NEXT -> Math.nextUp( (float) f );
+					case PREVIOUS -> Math.nextDown( (float) f );
+				};
+			}
+		}
+
+		private static class TransformingJdbcParameter extends AbstractJdbcParameter {
+			private final JdbcParameter parameter;
+			private final Function<Double, Float> valueTransformer;
+
+			public TransformingJdbcParameter(JdbcParameter parameter, Function<Double, Float> valueTransformer) {
+				super( parameter.getExpressionType().getSingleJdbcMapping(), parameter.getParameterId() );
+				this.parameter = parameter;
+				this.valueTransformer = valueTransformer;
+			}
+
+			@Override
+			public void bindParameterValue(
+					PreparedStatement statement,
+					int startPosition,
+					JdbcParameterBindings jdbcParamBindings,
+					ExecutionContext executionContext) throws SQLException {
+				final var binding = jdbcParamBindings.getBinding( parameter );
+				if ( binding == null ) {
+					throw new ExecutionException( "JDBC parameter value not bound - " + parameter );
+				}
+
+				final var jdbcMapping = jdbcMapping( executionContext, binding );
+				//noinspection unchecked
+				jdbcMapping.getJdbcValueBinder().bind(
+						statement,
+						(double) valueTransformer.apply( ((Number) binding.getBindValue()).doubleValue() ),
+						startPosition,
+						executionContext.getSession()
+				);
+			}
+
+			private JdbcMapping jdbcMapping(ExecutionContext executionContext, JdbcParameterBinding binding) {
+				JdbcMapping jdbcMapping = binding.getBindType();
+
+				if ( jdbcMapping == null ) {
+					jdbcMapping = getJdbcMapping();
+				}
+
+				// If the parameter type is not known from the context i.e. null or Object, infer it from the bind value
+				if ( jdbcMapping == null || jdbcMapping.getMappedJavaType().getJavaTypeClass() == Object.class ) {
+					jdbcMapping = guessBindType( executionContext, binding.getBindValue(), jdbcMapping );
+				}
+
+				if ( jdbcMapping == null ) {
+					throw new ExecutionException( "No JDBC mapping could be inferred for parameter - " + this );
+				}
+
+				return jdbcMapping;
+			}
+
+			private JdbcMapping guessBindType(ExecutionContext executionContext, Object bindValue, JdbcMapping jdbcMapping) {
+				if ( bindValue == null && jdbcMapping != null ) {
+					return jdbcMapping;
+				}
+				else {
+					final var parameterType =
+							executionContext.getSession().getFactory().getMappingMetamodel()
+									.resolveParameterBindType( bindValue );
+					return parameterType instanceof JdbcMapping ? (JdbcMapping) parameterType : null;
+				}
+			}
+		}
+
+		private static class TransformingSqlTypedMappingJdbcParameter extends SqlTypedMappingJdbcParameter {
+			private final SqlTypedMappingJdbcParameter parameter;
+			private final Function<Double, Float> valueTransformer;
+
+			public TransformingSqlTypedMappingJdbcParameter(SqlTypedMappingJdbcParameter parameter, Function<Double, Float> valueTransformer) {
+				super( parameter.getSqlTypedMapping(), parameter.getParameterId() );
+				this.parameter = parameter;
+				this.valueTransformer = valueTransformer;
+			}
+
+			@Override
+			public void bindParameterValue(
+					PreparedStatement statement,
+					int startPosition,
+					JdbcParameterBindings jdbcParamBindings,
+					ExecutionContext executionContext) throws SQLException {
+				final var binding = jdbcParamBindings.getBinding( parameter );
+				if ( binding == null ) {
+					throw new ExecutionException( "JDBC parameter value not bound - " + parameter );
+				}
+
+				final var jdbcMapping = jdbcMapping( executionContext, binding );
+				//noinspection unchecked
+				jdbcMapping.getJdbcValueBinder().bind(
+						statement,
+						(double) valueTransformer.apply( ((Number) binding.getBindValue()).doubleValue() ),
+						startPosition,
+						executionContext.getSession()
+				);
+			}
+
+			private JdbcMapping jdbcMapping(ExecutionContext executionContext, JdbcParameterBinding binding) {
+				JdbcMapping jdbcMapping = binding.getBindType();
+
+				if ( jdbcMapping == null ) {
+					jdbcMapping = getJdbcMapping();
+				}
+
+				// If the parameter type is not known from the context i.e. null or Object, infer it from the bind value
+				if ( jdbcMapping == null || jdbcMapping.getMappedJavaType().getJavaTypeClass() == Object.class ) {
+					jdbcMapping = guessBindType( executionContext, binding.getBindValue(), jdbcMapping );
+				}
+
+				if ( jdbcMapping == null ) {
+					throw new ExecutionException( "No JDBC mapping could be inferred for parameter - " + this );
+				}
+
+				return jdbcMapping;
+			}
+
+			private JdbcMapping guessBindType(ExecutionContext executionContext, Object bindValue, JdbcMapping jdbcMapping) {
+				if ( bindValue == null && jdbcMapping != null ) {
+					return jdbcMapping;
+				}
+				else {
+					final var parameterType =
+							executionContext.getSession().getFactory().getMappingMetamodel()
+									.resolveParameterBindType( bindValue );
+					return parameterType instanceof JdbcMapping ? (JdbcMapping) parameterType : null;
+				}
+			}
+		}
+	}
 	@Override
 	public void visitFromClause(FromClause fromClause) {
 		if ( fromClause == null || fromClause.getRoots().isEmpty() ) {
@@ -1196,6 +1561,22 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	}
 
 	private boolean hasVector(ModelPartContainer modelPartContainer) {
+		if ( modelPartContainer instanceof EntityMappingType entityMappingType ) {
+			final var attributeMappings = entityMappingType.getAttributeMappings();
+			final var attributeCount = entityMappingType.getNumberOfAttributeMappings();
+			for ( int i = 0; i < attributeCount; i++ ) {
+				if ( hasVector( attributeMappings.get( i ) ) ) {
+					return true;
+				}
+			}
+			return false;
+		}
+		else {
+			return hasVector( (JdbcMappingContainer) modelPartContainer );
+		}
+	}
+
+	private boolean hasVector(JdbcMappingContainer modelPartContainer) {
 		final int jdbcTypeCount = modelPartContainer.getJdbcTypeCount();
 		for ( int i = 0; i < jdbcTypeCount; i++ ) {
 			if ( isVector( modelPartContainer.getJdbcMapping( i ).getJdbcType().getDdlTypeCode() ) ) {

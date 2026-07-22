@@ -11,12 +11,14 @@ import org.hibernate.boot.model.TypeContributions;
 import org.hibernate.dialect.DatabaseVersion;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.SimpleDatabaseVersion;
+import org.hibernate.dialect.TimeZoneSupport;
 import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
 import org.hibernate.engine.jdbc.env.spi.IdentifierCaseStrategy;
 import org.hibernate.engine.jdbc.env.spi.IdentifierHelper;
 import org.hibernate.engine.jdbc.env.spi.IdentifierHelperBuilder;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.internal.util.StringHelper;
+import org.hibernate.mapping.Index;
 import org.hibernate.mapping.Table;
 import org.hibernate.query.sqm.function.SqmFunctionRegistry;
 import org.hibernate.query.sqm.produce.function.StandardArgumentsValidators;
@@ -55,9 +57,17 @@ import static java.lang.Integer.parseInt;
 import static org.hibernate.sql.ast.internal.NonLockingClauseStrategy.NON_CLAUSE_STRATEGY;
 import static org.hibernate.type.SqlTypes.CHAR;
 import static org.hibernate.type.SqlTypes.CLOB;
+import static org.hibernate.type.SqlTypes.DATE;
+import static org.hibernate.type.SqlTypes.FLOAT;
 import static org.hibernate.type.SqlTypes.NCHAR;
 import static org.hibernate.type.SqlTypes.NCLOB;
 import static org.hibernate.type.SqlTypes.NVARCHAR;
+import static org.hibernate.type.SqlTypes.REAL;
+import static org.hibernate.type.SqlTypes.TIME;
+import static org.hibernate.type.SqlTypes.TIMESTAMP;
+import static org.hibernate.type.SqlTypes.TIMESTAMP_UTC;
+import static org.hibernate.type.SqlTypes.TIMESTAMP_WITH_TIMEZONE;
+import static org.hibernate.type.SqlTypes.TIME_WITH_TIMEZONE;
 import static org.hibernate.type.SqlTypes.VARCHAR;
 
 /**
@@ -88,6 +98,16 @@ public class MilvusDialect extends Dialect {
 
 	public MilvusDialect(DatabaseVersion version) {
 		super( version );
+	}
+
+	@Override
+	protected DatabaseVersion getMinimumSupportedVersion() {
+		return MINIMUM_VERSION;
+	}
+
+	@Override
+	public DatabaseVersion determineDatabaseVersion(DialectResolutionInfo info) {
+		return determineVersion( info );
 	}
 
 	protected static DatabaseVersion determineVersion(DialectResolutionInfo info) {
@@ -129,6 +149,9 @@ public class MilvusDialect extends Dialect {
 		final JdbcTypeRegistry jdbcTypeRegistry = typeConfiguration.getJdbcTypeRegistry();
 		final DdlTypeRegistry ddlTypeRegistry = typeConfiguration.getDdlTypeRegistry();
 		final BasicTypeRegistry basicTypeRegistry = typeConfiguration.getBasicTypeRegistry();
+
+		jdbcTypeRegistry.addDescriptor( UuidAsVarcharJdbcType.INSTANCE );
+
 		final BasicType<Float> floatBasicType = basicTypeRegistry.resolve( StandardBasicTypes.FLOAT );
 		final BasicType<Byte> byteBasicType = basicTypeRegistry.resolve( StandardBasicTypes.BYTE );
 		final ArrayJdbcType vectorJdbcType = new MilvusVectorJdbcType( jdbcTypeRegistry.getDescriptor( SqlTypes.FLOAT ) );
@@ -172,14 +195,16 @@ public class MilvusDialect extends Dialect {
 		final BasicType<Double> doubleType = basicTypeRegistry.resolve( StandardBasicTypes.DOUBLE );
 		registerVectorDistanceFunction( functionRegistry, "cosine_distance", doubleType );
 		registerVectorDistanceFunction( functionRegistry, "euclidean_distance", doubleType );
+		registerVectorDistanceFunction( functionRegistry, "euclidean_squared_distance", doubleType );
 		functionRegistry.registerAlternateKey( "l2_distance", "euclidean_distance" );
 
 //		registerVectorDistanceFunction( functionRegistry, "l1_distance", doubleType );
 //		functionRegistry.registerAlternateKey( "taxicab_distance", "l1_distance" );
 
-//		registerVectorDistanceFunction( functionRegistry, "negative_inner_product", doubleType );
+		registerVectorDistanceFunction( functionRegistry, "negative_inner_product", doubleType );
 		registerVectorDistanceFunction( functionRegistry, "inner_product", doubleType );
 		registerVectorDistanceFunction( functionRegistry, "hamming_distance", doubleType );
+		registerVectorDistanceFunction( functionRegistry, "jaccard_distance", doubleType );
 
 		// todo (milvus): array and json functions?
 	}
@@ -217,6 +242,16 @@ public class MilvusDialect extends Dialect {
 	}
 
 	@Override
+	public int getMaxVarcharLength() {
+		return (1 << 16) - 1;
+	}
+
+	@Override
+	public int getMaxNVarcharLength() {
+		return getMaxVarcharLength();
+	}
+
+	@Override
 	public boolean supportsStandardArrays() {
 		return true;
 	}
@@ -224,9 +259,16 @@ public class MilvusDialect extends Dialect {
 	@Override
 	protected String columnType(int sqlTypeCode) {
 		return switch ( sqlTypeCode ) {
+			case FLOAT, REAL -> "float";
 			case CHAR,VARCHAR, NCHAR, NVARCHAR, CLOB, NCLOB -> "varchar";
+			case DATE, TIME, TIMESTAMP, TIMESTAMP_UTC, TIME_WITH_TIMEZONE, TIMESTAMP_WITH_TIMEZONE -> "timestamptz";
 			default -> super.columnType( sqlTypeCode );
 		};
+	}
+
+	@Override
+	public TimeZoneSupport getTimeZoneSupport() {
+		return TimeZoneSupport.NORMALIZE;
 	}
 
 	@Override
@@ -237,6 +279,11 @@ public class MilvusDialect extends Dialect {
 	@Override
 	public Exporter<Table> getTableExporter() {
 		return MilvusTableExporter.INSTANCE;
+	}
+
+	@Override
+	public Exporter<Index> getIndexExporter() {
+		return MilvusIndexExporter.INSTANCE;
 	}
 
 	@Override
