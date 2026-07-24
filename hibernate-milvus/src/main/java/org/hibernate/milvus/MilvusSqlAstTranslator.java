@@ -48,6 +48,7 @@ import org.hibernate.query.sqm.tuple.internal.AnonymousTupleTableGroupProducer;
 import org.hibernate.sql.ast.Clause;
 import org.hibernate.sql.ast.SqlAstNodeRenderingMode;
 import org.hibernate.sql.ast.spi.AbstractSqlAstTranslator;
+import org.hibernate.sql.ast.tree.MutationStatement;
 import org.hibernate.sql.ast.tree.SqlAstNode;
 import org.hibernate.sql.ast.tree.Statement;
 import org.hibernate.sql.ast.tree.cte.CteContainer;
@@ -72,7 +73,6 @@ import org.hibernate.sql.ast.tree.predicate.InListPredicate;
 import org.hibernate.sql.ast.tree.predicate.InSubQueryPredicate;
 import org.hibernate.sql.ast.tree.predicate.LikePredicate;
 import org.hibernate.sql.ast.tree.predicate.Predicate;
-import org.hibernate.sql.ast.tree.predicate.SelfRenderingPredicate;
 import org.hibernate.sql.ast.tree.predicate.ThruthnessPredicate;
 import org.hibernate.sql.ast.tree.select.QueryGroup;
 import org.hibernate.sql.ast.tree.select.QuerySpec;
@@ -83,12 +83,15 @@ import org.hibernate.sql.ast.tree.update.Assignment;
 import org.hibernate.sql.ast.tree.update.UpdateStatement;
 import org.hibernate.sql.exec.ExecutionException;
 import org.hibernate.sql.exec.internal.AbstractJdbcParameter;
+import org.hibernate.sql.exec.internal.JdbcParameterImpl;
 import org.hibernate.sql.exec.internal.SqlTypedMappingJdbcParameter;
 import org.hibernate.sql.exec.spi.ExecutionContext;
 import org.hibernate.sql.exec.spi.JdbcOperation;
 import org.hibernate.sql.exec.spi.JdbcParameterBinder;
 import org.hibernate.sql.exec.spi.JdbcParameterBinding;
 import org.hibernate.sql.exec.spi.JdbcParameterBindings;
+import org.hibernate.sql.model.MutationTarget;
+import org.hibernate.sql.model.ast.AbstractTableMutation;
 import org.hibernate.sql.model.ast.ColumnValueParameter;
 import org.hibernate.sql.model.ast.ColumnWriteFragment;
 import org.hibernate.sql.model.internal.OptionalTableUpdate;
@@ -98,13 +101,16 @@ import org.hibernate.sql.model.internal.TableInsertCustomSql;
 import org.hibernate.sql.model.internal.TableInsertStandard;
 import org.hibernate.sql.model.internal.TableUpdateCustomSql;
 import org.hibernate.sql.model.internal.TableUpdateStandard;
+import org.hibernate.tool.schema.extract.spi.ColumnTypeInformation;
 import org.hibernate.type.BasicPluralType;
+import org.hibernate.type.BasicType;
 import org.hibernate.type.SqlTypes;
+import org.hibernate.type.descriptor.java.JavaType;
+import org.hibernate.type.descriptor.java.spi.JavaTypeRegistry;
+import org.hibernate.type.descriptor.jdbc.JdbcType;
+import org.hibernate.type.spi.TypeConfiguration;
 
 import java.lang.reflect.Field;
-import java.math.BigDecimal;
-import java.math.MathContext;
-import java.math.RoundingMode;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
@@ -119,6 +125,7 @@ import java.util.function.Function;
 
 public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSqlAstTranslator<T> {
 
+	public static final String DEFAULT_EMBEDDING_FIELD = "embedding";
 	private static final String TRUE_CONSTANT = "1==1";
 
 	private MilvusStatementDefinition milvusStatement;
@@ -233,9 +240,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 						valueMap.put( targetColumns.get( i ).getColumnReference().getColumnExpression(),
 								renderValue( valueExpression ) );
 					}
-					if ( !hasVector( statement.getMutationTarget().getTargetPart() ) ) {
-						valueMap.put( "embedding", new MilvusFloatVectorValue( new float[]{ 0, 0 } ) );
-					}
+					addDefaultEmbeddingDataIfNeeded( valueMap, statement );
 					insert.getData().add( valueMap );
 				}
 			}
@@ -249,6 +254,21 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 		}
 		finally {
 			getCurrentClauseStack().pop();
+		}
+	}
+
+	private void addDefaultEmbeddingDataIfNeeded(Map<String, MilvusTypedValue> valueMap, MutationStatement statement) {
+		addDefaultEmbeddingDataIfNeeded( valueMap, statement.getMutationTarget() );
+	}
+
+	private void addDefaultEmbeddingDataIfNeeded(Map<String, MilvusTypedValue> valueMap, AbstractTableMutation<?> mutation) {
+		addDefaultEmbeddingDataIfNeeded( valueMap, mutation.getMutationTarget() );
+	}
+
+	private void addDefaultEmbeddingDataIfNeeded(Map<String, MilvusTypedValue> valueMap, MutationTarget<?> mutationTarget) {
+		// todo (milvus): as of version 3.0, the vector can be null in the beginning
+		if ( !hasVector( mutationTarget.getTargetPart() ) ) {
+			valueMap.put( DEFAULT_EMBEDDING_FIELD, new MilvusFloatVectorValue( new float[]{ 0, 0 } ) );
 		}
 	}
 
@@ -285,6 +305,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 					}
 				}
 				else {
+					// todo (milvus): version 3.0 supports order_by for query and order_by_fields for search methods
 					throw new UnsupportedOperationException( "Milvus only supports ordering by vector distance" );
 				}
 			}
@@ -427,7 +448,6 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 	private MilvusTypedValue renderValue(Expression expression) {
 		if ( isParameter( expression ) || expression instanceof ColumnWriteFragment ) {
-			final int position = getParameterBinders().size();
 			final String oldBuffer = getSqlBuffer().toString();
 			getSqlBuffer().setLength( 0 );
 
@@ -435,7 +455,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 			getSqlBuffer().setLength( 0 );
 			getSqlBuffer().append( oldBuffer );
-			return new MilvusParameterValue( position );
+			return new MilvusParameterValue( getParameterBinders().size() );
 		}
 		final Object literalValue = getLiteralValue( expression );
 		if ( literalValue instanceof Number number ) {
@@ -461,8 +481,11 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 	@Override
 	protected void visitParameterAsParameter(JdbcParameter jdbcParameter) {
-		final int position = getParameterBinders().size();
 		super.visitParameterAsParameter( jdbcParameter );
+		addParameterRegistration( getParameterBinders().size() );
+	}
+
+	private void addParameterRegistration(int position) {
 		Map<String, MilvusTypedValue> parameterRegistrations;
 		if ( milvusStatement instanceof AbstractMilvusQuery query ) {
 			parameterRegistrations = query.getFilterTemplateValues();
@@ -483,7 +506,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 		else {
 			throw new UnsupportedOperationException( "Unsupported statement: " + milvusStatement );
 		}
-		parameterRegistrations.put( "p" + getParameterBinders().size(), new MilvusParameterValue( position ) );
+		parameterRegistrations.put( "p" + position, new MilvusParameterValue( position ) );
 	}
 
 	@Override
@@ -562,42 +585,95 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 		if ( inListPredicate.isNegated() ) {
 			appendSql( " not" );
 		}
-		appendSql( " in [" );
-		String separator = NO_SEPARATOR;
-
-		final Iterator<Expression> iterator = listExpressions.iterator();
-		Expression listExpression = null;
-		int clauseItemNumber = 0;
-		for ( int i = 0; i < bindValueCountWithPadding; i++, clauseItemNumber++ ) {
-			if ( inExprLimit > 0 && inExprLimit == clauseItemNumber ) {
-				clauseItemNumber = 0;
-				appendInClauseSeparator( inListPredicate );
-				separator = NO_SEPARATOR;
-			}
-
-			if ( iterator.hasNext() ) { // If the iterator is exhausted, reuse the last expression for padding.
-				listExpression = itemAccessor.apply( iterator.next() );
-			}
-			// The only way for expression to be null is if listExpressions is empty,
-			// but if that is the case the code takes an early exit.
-			assert listExpression != null;
-
-			appendSql( separator );
-			listExpression.accept( this );
-			separator = COMMA_SEPARATOR;
-
-			// If we encounter an expression that is not a parameter or literal, we reset the inExprLimit and
-			// bindValueMaxCount and just render through the in list expressions as they are without padding/splitting
-			if ( !(listExpression instanceof JdbcParameter || listExpression instanceof SqmParameterInterpretation || listExpression instanceof Literal ) ) {
-				inExprLimit = 0;
-				bindValueCountWithPadding = bindValueCount;
-			}
+		appendSql( " in " );
+		if ( isAllParameters( listExpressions ) ) {
+			// Milvus does not support parameters in the array of the IN predicate i.e. `x in [{p0}]`,
+			// so we must transform the listExpressions, if they are all parameters, into a single array parameter
+			final JdbcParameter firstParameter = getJdbcParameter( listExpressions.get( 0 ) );
+			final BasicType<?> elementType = (BasicType<?>) firstParameter.getExpressionType().getSingleJdbcMapping();
+			final TypeConfiguration typeConfiguration = getSessionFactory().getTypeConfiguration();
+			final JavaTypeRegistry javaTypeRegistry = typeConfiguration.getJavaTypeRegistry();
+			@SuppressWarnings("unchecked") final JavaType<Object[]> arrayJavaType =
+					javaTypeRegistry.resolveArrayDescriptor( (Class<Object>) elementType.getJavaType() );
+			final JdbcType arrayJdbcType = typeConfiguration.getJdbcTypeRegistry().resolveTypeConstructorDescriptor(
+					SqlTypes.ARRAY,
+					elementType.getJdbcType(),
+					ColumnTypeInformation.EMPTY
+			);
+			final BasicType<Object[]> arrayType =
+					typeConfiguration.getBasicTypeRegistry().resolve( arrayJavaType, arrayJdbcType );
+			final JdbcParameter arrayParameter = new JdbcParameterImpl( arrayType );
+			final int parameterPosition = addParameterBinder(
+					arrayParameter,
+					(statement, startPosition, jdbcParameterBindings, executionContext) -> {
+						final Object[] array = new Object[listExpressions.size()];
+						for ( int i = 0; i < listExpressions.size(); i++ ) {
+							final JdbcParameter parameter = getJdbcParameter( listExpressions.get( i ) );
+							final JdbcParameterBinding binding = jdbcParameterBindings.getBinding( parameter );
+							if ( binding == null ) {
+								throw new ExecutionException( "JDBC parameter value not bound - " + parameter );
+							}
+							array[i] = binding.getBindValue();
+						}
+						arrayType.getJdbcValueBinder().bind( statement, array, startPosition, executionContext.getSession() );
+					}
+			);
+			renderParameterAsParameter( parameterPosition, arrayParameter );
+			addParameterRegistration( parameterPosition );
 		}
+		else {
+			appendSql( '[' );
+			String separator = NO_SEPARATOR;
 
-		appendSql( ']' );
+			final Iterator<Expression> iterator = listExpressions.iterator();
+			Expression listExpression = null;
+			int clauseItemNumber = 0;
+			for ( int i = 0; i < bindValueCountWithPadding; i++, clauseItemNumber++ ) {
+				if ( inExprLimit > 0 && inExprLimit == clauseItemNumber ) {
+					clauseItemNumber = 0;
+					appendInClauseSeparator( inListPredicate );
+					separator = NO_SEPARATOR;
+				}
+
+				if ( iterator.hasNext() ) { // If the iterator is exhausted, reuse the last expression for padding.
+					listExpression = itemAccessor.apply( iterator.next() );
+				}
+				// The only way for expression to be null is if listExpressions is empty,
+				// but if that is the case the code takes an early exit.
+				assert listExpression != null;
+
+				appendSql( separator );
+				listExpression.accept( this );
+				separator = COMMA_SEPARATOR;
+
+				// If we encounter an expression that is not a parameter or literal, we reset the inExprLimit and
+				// bindValueMaxCount and just render through the in list expressions as they are without padding/splitting
+				if ( !(listExpression instanceof JdbcParameter || listExpression instanceof SqmParameterInterpretation || listExpression instanceof Literal) ) {
+					inExprLimit = 0;
+					bindValueCountWithPadding = bindValueCount;
+				}
+			}
+
+			appendSql( ']' );
+		}
 		if ( parenthesis ) {
 			appendSql( CLOSE_PARENTHESIS );
 		}
+	}
+
+	private static boolean isAllParameters(List<Expression> listExpressions) {
+		for ( Expression listExpression : listExpressions ) {
+			if ( !isParameter( listExpression ) ) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static JdbcParameter getJdbcParameter(Expression expression) {
+		return expression instanceof SqmParameterInterpretation parameterInterpretation
+				? (JdbcParameter) parameterInterpretation.getResolvedExpression()
+				: (JdbcParameter) expression;
 	}
 
 	private void appendInClauseSeparator(InListPredicate inListPredicate) {
@@ -717,10 +793,18 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 			}
 			throw new UnsupportedOperationException( "Unsupported predicate type for by id predicate: " + predicate );
 		}
-		if ( required && (!(lhs instanceof ColumnReference columnReference) || !isPrimaryKey( columnReference ) )) {
-			throw new UnsupportedOperationException( "Unsupported LHS expression type for by id predicate: " + predicate );
+		if ( !(lhs instanceof ColumnReference columnReference) || !isPrimaryKey( columnReference ) ){
+			if ( required ) {
+				throw new UnsupportedOperationException(
+						"Unsupported LHS expression type for by id predicate: " + predicate );
+			}
+			else {
+				return null;
+			}
 		}
-		return idsValues;
+		else {
+			return idsValues;
+		}
 	}
 
 	private boolean isPrimaryKey(ColumnReference columnReference) {
@@ -885,6 +969,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 			addVectorSearch( distanceFunctionKind, functionExpression );
 		}
 		else {
+			// todo (milvus): version 3.0 supports aggregate expressions count, sum, avg, min, max
 			throw new UnsupportedOperationException("Only column references are supported by Milvus in the SELECT clause");
 		}
 	}
@@ -933,6 +1018,12 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 			throw new UnsupportedOperationException( "Vector search only works for select queries in Milvus" );
 		}
 
+		if ( vectorTypedValue instanceof MilvusParameterValue parameterValue ) {
+			// There is no need for adding the vector as filter template value,
+			// since it won't appear in the filter anyway
+			((AbstractMilvusQuery) milvusStatement).getFilterTemplateValues()
+					.remove( "p" + parameterValue.position() );
+		}
 		milvusSearch.setMetricType( distanceFunctionKind.getMetricType() );
 		milvusSearch.setAnnsField( vectorColumn.getColumnExpression() );
 		milvusSearch.setData( List.of( vectorTypedValue ) );
@@ -945,8 +1036,8 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 		final MilvusParameterValue existingParameter = (MilvusParameterValue) existingTypedValue;
 		final MilvusParameterValue newParameter = (MilvusParameterValue) newTypedValue;
 		// The binder also is the parameter
-		final JdbcParameter existingJdbcParameter = (JdbcParameter) getParameterBinders().get( existingParameter.position() );
-		final JdbcParameter newJdbcParameter = (JdbcParameter) getParameterBinders().get( newParameter.position() );
+		final JdbcParameter existingJdbcParameter = (JdbcParameter) getParameterBinders().get( existingParameter.index() );
+		final JdbcParameter newJdbcParameter = (JdbcParameter) getParameterBinders().get( newParameter.index() );
 		return existingJdbcParameter.getParameterId() != null
 			&& existingJdbcParameter.getParameterId().equals( newJdbcParameter.getParameterId() );
 	}
@@ -1086,9 +1177,9 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 			if ( offset != null ) {
 				final Function<Double, Float> distanceFilterValueTransformer = distanceFilterValueTransformer( offset );
 				if ( expressionTypedValue instanceof MilvusParameterValue parameterValue ) {
-					JdbcParameterBinder jdbcParameterBinder = parameterBinders.get( parameterValue.position() );
+					JdbcParameterBinder jdbcParameterBinder = parameterBinders.get( parameterValue.index() );
 					parameterBinders.set(
-							parameterValue.position(),
+							parameterValue.index(),
 							wrapDistanceFilterParameterBinder( jdbcParameterBinder, distanceFilterValueTransformer )
 					);
 					return expressionTypedValue;
@@ -1130,15 +1221,15 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 			if ( offset != null ) {
 				final Function<Double, Float> distanceFilterValueTransformer = distanceFilterValueTransformer( offset );
 				if ( expressionTypedValue instanceof MilvusParameterValue parameterValue ) {
-					final JdbcParameterBinder jdbcParameterBinder = parameterBinders.get( parameterValue.position() );
+					final JdbcParameterBinder jdbcParameterBinder = parameterBinders.get( parameterValue.index() );
 					final JdbcParameterBinder wrappedBinder =
 							wrapDistanceFilterParameterBinder( jdbcParameterBinder, distanceFilterValueTransformer );
 					if ( jdbcParameterBinder instanceof TransformingJdbcParameter
 							|| jdbcParameterBinder instanceof TransformingSqlTypedMappingJdbcParameter ) {
-						parameterBinders.add( parameterValue.position(), wrappedBinder );
+						parameterBinders.add( parameterValue.index(), wrappedBinder );
 					}
 					else {
-						parameterBinders.set( parameterValue.position(), wrappedBinder );
+						parameterBinders.set( parameterValue.index(), wrappedBinder );
 					}
 					return expressionTypedValue;
 				}
@@ -1426,11 +1517,6 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	}
 
 	@Override
-	public void visitSelfRenderingExpression(SelfRenderingExpression expression) {
-		throw new UnsupportedOperationException();
-	}
-
-	@Override
 	public void visitSqlSelectionExpression(SqlSelectionExpression expression) {
 		throw new UnsupportedOperationException();
 	}
@@ -1501,11 +1587,6 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	}
 
 	@Override
-	public void visitSelfRenderingPredicate(SelfRenderingPredicate selfRenderingPredicate) {
-		throw new UnsupportedOperationException();
-	}
-
-	@Override
 	public void visitDurationUnit(DurationUnit durationUnit) {
 		throw new UnsupportedOperationException();
 	}
@@ -1542,9 +1623,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 					}
 					values.put(columnValueBinding.getColumnReference().getColumnExpression(), renderValue( columnValueBinding.getValueExpression() ) );
 				} );
-				if ( !hasVector( tableInsert.getMutationTarget().getTargetPart() ) ) {
-					values.put( "embedding", new MilvusFloatVectorValue( new float[]{ 0, 0 } ) );
-				}
+				addDefaultEmbeddingDataIfNeeded( values, tableInsert );
 				insert.getData().add( values );
 			}
 			finally {
@@ -1682,9 +1761,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 				tableUpdate.forEachValueBinding( (columnPosition, columnValueBinding) -> {
 					data.put( columnValueBinding.getColumnReference().getColumnExpression(), renderValue( columnValueBinding.getValueExpression() ) );
 				} );
-				if ( !hasVector( tableUpdate.getMutationTarget().getTargetPart() ) ) {
-					data.put( "embedding", new MilvusFloatVectorValue( new float[]{ 0, 0 } ) );
-				}
+				addDefaultEmbeddingDataIfNeeded( data, tableUpdate );
 			}
 			finally {
 				getCurrentClauseStack().pop();

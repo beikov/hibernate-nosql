@@ -75,4 +75,14 @@ public class MilvusGeneratedKeysResultSet extends AbstractResultSet<MilvusStatem
 		}
 		return generatedKeys.get( position );
 	}
+
+	@Override
+	protected int getColumnIndex(String columnLabel) throws SQLException {
+		checkClosed();
+		wasNull = false;
+		if ( !COLUMN_NAMES.get( 0 ).equals( columnLabel ) ) {
+			throw new SQLException("Column not found: " + columnLabel);
+		}
+		return 0;
+	}
 }

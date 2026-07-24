@@ -241,6 +241,22 @@ public class MilvusTest {
 			assertEquals( jaccardDistance( BV2, vector ), results.get( 1 ).get( 1, Double.class ), 0.0000001D );
 		} );
 	}
+
+	@Test
+	public void testInListPredicateTransformation(SessionFactoryScope scope) {
+		scope.inTransaction( em -> {
+			final List<Tuple> results = em.createSelectionQuery(
+							"select e.id from VectorEntity e where e.theLong in :ids and e.theString in :theStrings",
+							Tuple.class
+					)
+					.setParameter( "ids", List.of( 1L, 2L ) )
+					.setParameter( "theStrings", List.of( "vector1", "vector2" ) )
+					.getResultList();
+			assertEquals( 2, results.size() );
+			assertEquals( 1L, results.get( 0 ).get( 0 ) );
+			assertEquals( 2L, results.get( 1 ).get( 0 ) );
+		} );
+	}
 //
 //	@Test
 //	public void testVectorDims(SessionFactoryScope scope) {
@@ -358,6 +374,12 @@ public class MilvusTest {
 		@Id
 		private Long id;
 
+		private byte theByte;
+		private short theShort;
+		private int theInt;
+		private long theLong;
+		private String theString;
+
 		@Column( name = "the_ip_vector", nullable = false )
 		@JdbcTypeCode(SqlTypes.VECTOR)
 		@Array(length = 3)
@@ -384,6 +406,11 @@ public class MilvusTest {
 
 		public VectorEntity(Long id, float[] theVector, byte[] theBinaryVector) {
 			this.id = id;
+			this.theByte = id.byteValue();
+			this.theShort = id.shortValue();
+			this.theInt = id.intValue();
+			this.theLong = id.longValue();
+			this.theString = "vector" + id;
 			this.theIpVector = theVector;
 			this.theCosineVector = theVector;
 			this.theL2Vector = theVector;

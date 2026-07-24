@@ -52,4 +52,10 @@ public class MilvusEmptyResultSet extends AbstractResultSet<MilvusStatement> {
 		checkClosed();
 		throw new SQLException("Column not found: " + columnLabel);
 	}
+
+	@Override
+	protected int getColumnIndex(String columnLabel) throws SQLException {
+		checkClosed();
+		throw new SQLException("Column not found: " + columnLabel);
+	}
 }

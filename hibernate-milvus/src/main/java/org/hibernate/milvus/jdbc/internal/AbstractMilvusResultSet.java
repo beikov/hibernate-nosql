@@ -86,6 +86,7 @@ public abstract class AbstractMilvusResultSet extends AbstractResultSet<MilvusSt
 		return fields.indexOf( columnLabel ) + 1;
 	}
 
+	@Override
 	protected int getColumnIndex(String columnLabel) throws SQLException {
 		checkClosed();
 		int index = fields.indexOf( columnLabel );
