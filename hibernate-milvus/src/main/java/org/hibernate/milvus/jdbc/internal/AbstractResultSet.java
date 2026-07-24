@@ -4,6 +4,8 @@
  */
 package org.hibernate.milvus.jdbc.internal;
 
+import com.google.gson.JsonNull;
+import com.google.gson.JsonPrimitive;
 import jakarta.annotation.Nullable;
 import org.hibernate.internal.build.AllowReflection;
 
@@ -12,6 +14,7 @@ import java.io.InputStream;
 import java.io.Reader;
 import java.io.StringReader;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.net.MalformedURLException;
 import java.net.URI;
@@ -270,12 +273,27 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 
 	protected abstract Object getValue(String columnLabel) throws SQLException;
 
+	protected abstract int getColumnIndex(String columnLabel) throws SQLException;
+
 	private String getString(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof String ) {
-			return (String) value;
+		else {
+			return stringValue( value );
+		}
+	}
+
+	private String stringValue(Object value) throws SQLException {
+		if ( value instanceof String string ) {
+			return string;
+		}
+		else if ( value instanceof JsonPrimitive jsonPrimitive ) {
+			if ( !jsonPrimitive.isString() ) {
+				throw new SQLException( "Can convert json primitive value to string: " + jsonPrimitive );
+			}
+			return jsonPrimitive.getAsString();
 		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
@@ -283,11 +301,18 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private boolean getBoolean(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return false;
 		}
-		else if ( value instanceof Boolean ) {
-			return (Boolean) value;
+		else if ( value instanceof Boolean booleanValue ) {
+			return booleanValue;
+		}
+		else if ( value instanceof JsonPrimitive jsonPrimitive ) {
+			if ( !jsonPrimitive.isBoolean() ) {
+				throw new SQLException( "Can convert json primitive value to boolean: " + jsonPrimitive );
+			}
+			return jsonPrimitive.getAsBoolean();
 		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
@@ -295,74 +320,189 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private byte getByte(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return 0;
 		}
-		else if ( value instanceof Byte ) {
-			return (Byte) value;
+		else if ( value instanceof Byte byteValue ) {
+			return byteValue;
 		}
-		else if ( value instanceof Number ) {
-			return ((Number) value).byteValue();
+		else if ( value instanceof Number number ) {
+			return byteValueExact( number );
+		}
+		else if ( value instanceof JsonPrimitive jsonPrimitive ) {
+			if ( !jsonPrimitive.isNumber() ) {
+				throw new SQLException( "Can convert json primitive value to number: " + jsonPrimitive );
+			}
+			return byteValueExact( jsonPrimitive.getAsNumber() );
 		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+		}
+	}
+
+	private static byte byteValueExact(Number number) throws SQLException {
+		try {
+			if ( number instanceof BigDecimal bigDecimal ) {
+				return bigDecimal.byteValueExact();
+			}
+			else if ( number instanceof BigInteger bigInteger ) {
+				return bigInteger.byteValueExact();
+			}
+			else {
+				final long longValue = number.longValue();
+				if ( longValue < Byte.MIN_VALUE || longValue > Byte.MAX_VALUE ) {
+					throw new ArithmeticException( "Number value out of byte range" );
+				}
+				return (byte) longValue;
+			}
+		}
+		catch ( ArithmeticException e ) {
+			throw new SQLException( e.getMessage() );
 		}
 	}
 
 	private short getShort(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return 0;
 		}
-		else if ( value instanceof Short ) {
-			return (Short) value;
+		else if ( value instanceof Short shortValue ) {
+			return shortValue;
 		}
-		else if ( value instanceof Number ) {
-			return ((Number) value).shortValue();
+		else if ( value instanceof Number number ) {
+			return shortValueExact( number );
+		}
+		else if ( value instanceof JsonPrimitive jsonPrimitive ) {
+			if ( !jsonPrimitive.isNumber() ) {
+				throw new SQLException( "Can convert json primitive value to number: " + jsonPrimitive );
+			}
+			return shortValueExact( jsonPrimitive.getAsNumber() );
 		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+		}
+	}
+
+	private static short shortValueExact(Number number) throws SQLException {
+		try {
+			if ( number instanceof BigDecimal bigDecimal ) {
+				return bigDecimal.shortValueExact();
+			}
+			else if ( number instanceof BigInteger bigInteger ) {
+				return bigInteger.shortValueExact();
+			}
+			else {
+				final long longValue = number.longValue();
+				if ( longValue < Short.MIN_VALUE || longValue > Short.MAX_VALUE ) {
+					throw new ArithmeticException( "Number value out of short range" );
+				}
+				return (short) longValue;
+			}
+		}
+		catch ( ArithmeticException e ) {
+			throw new SQLException( e.getMessage() );
 		}
 	}
 
 	private int getInt(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return 0;
 		}
-		else if ( value instanceof Integer ) {
-			return (Integer) value;
+		else if ( value instanceof Integer integerValue ) {
+			return integerValue;
 		}
-		else if ( value instanceof Number ) {
-			return ((Number) value).intValue();
+		else if ( value instanceof Number number ) {
+			return intValueExact( number );
+		}
+		else if ( value instanceof JsonPrimitive jsonPrimitive ) {
+			if ( !jsonPrimitive.isNumber() ) {
+				throw new SQLException( "Can convert json primitive value to number: " + jsonPrimitive );
+			}
+			return intValueExact( jsonPrimitive.getAsNumber() );
 		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+		}
+	}
+
+	private static int intValueExact(Number number) throws SQLException {
+		try {
+			if ( number instanceof BigDecimal bigDecimal ) {
+				return bigDecimal.intValueExact();
+			}
+			else if ( number instanceof BigInteger bigInteger ) {
+				return bigInteger.intValueExact();
+			}
+			else {
+				final long longValue = number.longValue();
+				if ( longValue < Integer.MIN_VALUE || longValue > Integer.MAX_VALUE ) {
+					throw new ArithmeticException( "Number value out of int range" );
+				}
+				return (int) longValue;
+			}
+		}
+		catch ( ArithmeticException e ) {
+			throw new SQLException( e.getMessage() );
 		}
 	}
 
 	private long getLong(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return 0;
 		}
-		else if ( value instanceof Long ) {
-			return (Long) value;
+		else if ( value instanceof Long longValue ) {
+			return longValue;
 		}
-		else if ( value instanceof Number ) {
-			return ((Number) value).longValue();
+		else if ( value instanceof Number number ) {
+			return longValueExact( number );
+		}
+		else if ( value instanceof JsonPrimitive jsonPrimitive ) {
+			if ( !jsonPrimitive.isNumber() ) {
+				throw new SQLException( "Can convert json primitive value to number: " + jsonPrimitive );
+			}
+			return longValueExact( jsonPrimitive.getAsNumber() );
 		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
 		}
 	}
 
+	private static long longValueExact(Number number) throws SQLException {
+		try {
+			if ( number instanceof BigDecimal bigDecimal ) {
+				return bigDecimal.longValueExact();
+			}
+			else if ( number instanceof BigInteger bigInteger ) {
+				return bigInteger.longValueExact();
+			}
+			else {
+				return number.longValue();
+			}
+		}
+		catch ( ArithmeticException e ) {
+			throw new SQLException( e.getMessage() );
+		}
+	}
+
 	private float getFloat(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return 0;
 		}
-		else if ( value instanceof Float ) {
-			return (Float) value;
+		else if ( value instanceof Float floatValue ) {
+			return floatValue;
 		}
-		else if ( value instanceof Number ) {
-			return ((Number) value).floatValue();
+		else if ( value instanceof Number number ) {
+			return number.floatValue();
+		}
+		else if ( value instanceof JsonPrimitive jsonPrimitive ) {
+			if ( !jsonPrimitive.isNumber() ) {
+				throw new SQLException( "Can convert json primitive value to number: " + jsonPrimitive );
+			}
+			return jsonPrimitive.getAsNumber().floatValue();
 		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
@@ -370,14 +510,21 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private double getDouble(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return 0;
 		}
-		else if ( value instanceof Double ) {
-			return (Double) value;
+		else if ( value instanceof Double doubleValue ) {
+			return doubleValue;
 		}
-		else if ( value instanceof Number ) {
-			return ((Number) value).doubleValue();
+		else if ( value instanceof Number number ) {
+			return number.doubleValue();
+		}
+		else if ( value instanceof JsonPrimitive jsonPrimitive ) {
+			if ( !jsonPrimitive.isNumber() ) {
+				throw new SQLException( "Can convert json primitive value to number: " + jsonPrimitive );
+			}
+			return jsonPrimitive.getAsNumber().doubleValue();
 		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
@@ -385,7 +532,8 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private BigDecimal getBigDecimal(Object value, int scale) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
 		else {
@@ -394,11 +542,12 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private byte[] getBytes(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof byte[] ) {
-			return (byte[]) value;
+		else if ( value instanceof byte[] bytes ) {
+			return bytes;
 		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
@@ -406,11 +555,12 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private Date getDate(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof Date ) {
-			return (Date) value;
+		else if ( value instanceof Date date ) {
+			return date;
 		}
 		else {
 			return getObject( value, Date.class );
@@ -418,11 +568,12 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private Time getTime(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof Time ) {
-			return (Time) value;
+		else if ( value instanceof Time time ) {
+			return time;
 		}
 		else {
 			return getObject( value, Time.class );
@@ -430,11 +581,12 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private Timestamp getTimestamp(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof Timestamp ) {
-			return (Timestamp) value;
+		else if ( value instanceof Timestamp timestamp ) {
+			return timestamp;
 		}
 		else {
 			return getObject( value, Timestamp.class );
@@ -442,44 +594,41 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private InputStream getAsciiStream(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof InputStream ) {
-			return (InputStream) value;
-		}
-		else if ( value instanceof String ) {
-			return new ByteArrayInputStream( ((String) value).getBytes( StandardCharsets.US_ASCII) );
+		else if ( value instanceof InputStream inputStream ) {
+			return inputStream;
 		}
 		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+			return new ByteArrayInputStream( stringValue( value ).getBytes( StandardCharsets.US_ASCII) );
 		}
 	}
 
 	private InputStream getUnicodeStream(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof InputStream ) {
-			return (InputStream) value;
-		}
-		else if ( value instanceof String ) {
-			return new ByteArrayInputStream( ((String) value).getBytes( StandardCharsets.UTF_8) );
+		else if ( value instanceof InputStream inputStream ) {
+			return inputStream;
 		}
 		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+			return new ByteArrayInputStream( stringValue( value ).getBytes( StandardCharsets.UTF_8) );
 		}
 	}
 
 	private InputStream getBinaryStream(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof InputStream ) {
-			return (InputStream) value;
+		else if ( value instanceof InputStream inputStream ) {
+			return inputStream;
 		}
-		else if ( value instanceof byte[] ) {
-			return new ByteArrayInputStream( (byte[]) value );
+		else if ( value instanceof byte[] bytes ) {
+			return new ByteArrayInputStream( bytes );
 		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
@@ -491,44 +640,43 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private Reader getCharacterStream(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof Reader ) {
-			return (Reader) value;
-		}
-		else if ( value instanceof String ) {
-			return new StringReader( (String) value );
+		else if ( value instanceof Reader reader ) {
+			return reader;
 		}
 		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+			return new StringReader( stringValue( value ) );
 		}
 	}
 
 	private BigDecimal getBigDecimal(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof BigDecimal ) {
-			return (BigDecimal) value;
+		else if ( value instanceof BigDecimal bigDecimal ) {
+			return bigDecimal;
 		}
-		else if ( value instanceof Double ) {
-			return BigDecimal.valueOf( ((Double) value) );
+		else if ( value instanceof Double doubleValue ) {
+			return BigDecimal.valueOf( doubleValue );
 		}
-		else if ( value instanceof Float ) {
-			return BigDecimal.valueOf( ((Float) value) );
+		else if ( value instanceof Float floatValue ) {
+			return BigDecimal.valueOf( floatValue );
 		}
-		else if ( value instanceof Long ) {
-			return BigDecimal.valueOf( ((Long) value) );
+		else if ( value instanceof Long longValue ) {
+			return BigDecimal.valueOf( longValue );
 		}
-		else if ( value instanceof Integer ) {
-			return BigDecimal.valueOf( ((Integer) value) );
+		else if ( value instanceof Integer integerValue ) {
+			return BigDecimal.valueOf( integerValue );
 		}
-		else if ( value instanceof Short ) {
-			return BigDecimal.valueOf( ((Short) value) );
+		else if ( value instanceof Short shortValue ) {
+			return BigDecimal.valueOf( shortValue );
 		}
-		else if ( value instanceof Byte ) {
-			return BigDecimal.valueOf( ((Byte) value) );
+		else if ( value instanceof Byte byteValue ) {
+			return BigDecimal.valueOf( byteValue );
 		}
 		else if ( value instanceof Number ) {
 			return new BigDecimal( value.toString() );
@@ -539,18 +687,25 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private Object getObject(Object value, Map<String, Class<?>> map) throws SQLException {
-		return value;
+		if ( value == null ) {
+			wasNull = true;
+			return null;
+		}
+		else {
+			return value;
+		}
 	}
 
 	private Blob getBlob(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof Blob ) {
-			return (Blob) value;
+		else if ( value instanceof Blob blob ) {
+			return blob;
 		}
-		else if ( value instanceof byte[] ) {
-			return new ByteArrayBlob( (byte[]) value );
+		else if ( value instanceof byte[] bytes ) {
+			return new ByteArrayBlob( bytes );
 		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
@@ -558,39 +713,91 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private Clob getClob(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof Clob ) {
-			return (Clob) value;
-		}
-		else if ( value instanceof String ) {
-			return new StringClob( (String) value );
+		else if ( value instanceof Clob clob ) {
+			return clob;
 		}
 		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+			return new StringClob( stringValue( value ) );
 		}
 	}
 
-	private Array getArray(Object value) throws SQLException {
-		if ( value == null ) {
+	private Array getArray(Object value, int columnIndex) throws SQLException {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
 		else if ( value.getClass().isArray() ) {
-			return (Array) value;
+			final String baseTypeName = determineBaseTypeName( value );
+			return new MilvusArray (
+					baseTypeName == null
+							? getBaseTypeName( getMetaData().getColumnTypeName( columnIndex ) )
+							: baseTypeName,
+					value
+			);
 		}
-		// todo (milvus): emulate?
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
 		}
 	}
 
-	private Date getDate(Object value, Calendar cal) throws SQLException {
-		if ( value == null ) {
+	private String determineBaseTypeName(Object value) {
+		if ( value instanceof Object[] array ) {
+			for ( Object element : array ) {
+				if ( element != null ) {
+					if ( element instanceof String ) {
+						return "varchar";
+					}
+					else {
+						throw new UnsupportedOperationException( "Unsupported array element type: " + element.getClass().getName() );
+					}
+				}
+			}
 			return null;
 		}
-		else if ( value instanceof Date ) {
-			return (Date) value;
+		else if ( value instanceof boolean[] ) {
+			return "boolean";
+		}
+		else if ( value instanceof byte[] ) {
+			return "tinyint";
+		}
+		else if ( value instanceof short[] ) {
+			return "smallint";
+		}
+		else if ( value instanceof int[] ) {
+			return "integer";
+		}
+		else if ( value instanceof long[] ) {
+			return "bigint";
+		}
+		else if ( value instanceof float[] ) {
+			return "float";
+		}
+		else if ( value instanceof double[] ) {
+			return "double precision";
+		}
+		else {
+			return null;
+		}
+	}
+
+	private String getBaseTypeName(String columnTypeName) {
+		if ( columnTypeName == null || !columnTypeName.endsWith( "[]" ) ) {
+			throw new IllegalArgumentException( "Array type name must end with '[]', but found: " + columnTypeName );
+		}
+		return columnTypeName.substring( 0, columnTypeName.length() - 2 );
+	}
+
+	private Date getDate(Object value, Calendar cal) throws SQLException {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
+			return null;
+		}
+		else if ( value instanceof Date date ) {
+			return date;
 		}
 		else {
 			return getObject( value, Date.class, cal );
@@ -598,11 +805,12 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private Time getTime(Object value, Calendar cal) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof Time ) {
-			return (Time) value;
+		else if ( value instanceof Time time ) {
+			return time;
 		}
 		else {
 			return getObject( value, Time.class, cal );
@@ -610,11 +818,12 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private Timestamp getTimestamp(Object value, Calendar cal) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof Timestamp ) {
-			return (Timestamp) value;
+		else if ( value instanceof Timestamp timestamp ) {
+			return timestamp;
 		}
 		else {
 			return getObject( value, Timestamp.class, cal );
@@ -622,31 +831,30 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private URL getURL(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof URL ) {
-			return (URL) value;
+		else if ( value instanceof URL url ) {
+			return url;
 		}
-		else if ( value instanceof String ) {
+		else {
 			try {
-				return URI.create( (String) value ).toURL();
+				return URI.create( stringValue( value ) ).toURL();
 			}
 			catch (MalformedURLException e) {
 				throw new SQLException( "Invalid URL", e );
 			}
 		}
-		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
-		}
 	}
 
 	private RowId getRowId(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof RowId ) {
-			return (RowId) value;
+		else if ( value instanceof RowId rowId ) {
+			return rowId;
 		}
 		// todo (milvus): emulate?
 		else {
@@ -655,17 +863,15 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	}
 
 	private NClob getNClob(Object value) throws SQLException {
-		if ( value == null ) {
+		if ( value == null || value instanceof JsonNull ) {
+			wasNull = true;
 			return null;
 		}
-		else if ( value instanceof NClob ) {
-			return (NClob) value;
-		}
-		else if ( value instanceof String ) {
-			return new StringClob( (String) value );
+		else if ( value instanceof NClob nClob ) {
+			return nClob;
 		}
 		else {
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
+			return new StringClob( stringValue( value ) );
 		}
 	}
 
@@ -679,6 +885,7 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 	@AllowReflection
 	private <T> T getObject(Object value, Class<T> type, @Nullable Calendar cal) throws SQLException {
 		if ( value == null ) {
+			wasNull = true;
 			return null;
 		}
 		else if ( type.isInstance( value  ) ) {
@@ -875,7 +1082,7 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 
 	@Override
 	public Array getArray(int columnIndex) throws SQLException {
-		return getArray( getValue( columnIndex ) );
+		return getArray( getValue( columnIndex ), columnIndex );
 	}
 
 	@Override
@@ -1047,7 +1254,7 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 
 	@Override
 	public Array getArray(String columnLabel) throws SQLException {
-		return getArray( getValue( columnLabel ) );
+		return getArray( getValue( columnLabel ), getColumnIndex( columnLabel ) );
 	}
 
 	@Override

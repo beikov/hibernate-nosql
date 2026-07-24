@@ -325,13 +325,13 @@ public class MilvusConnection implements Connection {
 
 	private Object determineValue(MilvusTypedValue value, Object[] parameterValues) throws SQLException {
 		if ( value instanceof MilvusParameterValue parameterValue ) {
-			return determineTemplateValue( parameterValues[parameterValue.position()] );
+			return determineTemplateValue( parameterValues[parameterValue.index()] );
 		}
 		else if ( value instanceof MilvusStringValue stringValue ) {
 			return stringValue.value();
 		}
 		else if ( value instanceof MilvusNumberValue numberValue ) {
-			return numberValue.value();
+			return determineNativeNumberValue( numberValue.value() );
 		}
 		else if ( value instanceof MilvusBooleanValue booleanValue ) {
 			return booleanValue.value();
@@ -348,9 +348,25 @@ public class MilvusConnection implements Connection {
 		}
 	}
 
+	private Number determineNativeNumberValue(Number value) {
+		// The native Milvus driver only supports Integer, Long and Double number types on the protocol level
+		if ( value instanceof Integer || value instanceof Long || value instanceof Double ) {
+			return value;
+		}
+		else if ( value instanceof Short || value instanceof Byte ) {
+			return value.intValue();
+		}
+		else {
+			// Since float and JSON field values use Float#toString(),
+			// we can't just cast float values, because 1.23f might be 1.23000000001d,
+			// though that is not what was stored on the database
+			return Double.parseDouble( value.toString() );
+		}
+	}
+
 	private JsonElement determineJsonValue(MilvusTypedValue value, Object[] parameterValues) throws SQLException {
 		if ( value instanceof MilvusParameterValue parameterValue ) {
-			return determineJsonValue( parameterValues[parameterValue.position()] );
+			return determineJsonValue( parameterValues[parameterValue.index()] );
 		}
 		else if ( value instanceof MilvusStringValue stringValue ) {
 			return new JsonPrimitive( stringValue.value() );
@@ -376,6 +392,9 @@ public class MilvusConnection implements Connection {
 	private JsonElement determineJsonValue(Object parameterValue) throws SQLException {
 		if ( parameterValue == null ) {
 			return JsonNull.INSTANCE;
+		}
+		else if ( parameterValue instanceof JsonElement jsonElement ) {
+			return jsonElement;
 		}
 		else if ( parameterValue instanceof String string ) {
 			return new JsonPrimitive( string );
@@ -516,25 +535,35 @@ public class MilvusConnection implements Connection {
 	private Object determineTemplateValue(Object parameterValue) throws SQLException {
 		if ( parameterValue == null
 			|| parameterValue instanceof Boolean
-			|| parameterValue instanceof String
-			|| parameterValue instanceof Integer
-			|| parameterValue instanceof Long
-			|| parameterValue instanceof Float
-			|| parameterValue instanceof Double ) {
+			|| parameterValue instanceof String ) {
 			return parameterValue;
 		}
 		else if ( parameterValue instanceof Byte number ) {
 			return number.intValue();
 		}
-		else if ( parameterValue instanceof Short number ) {
-			return number.intValue();
-		}
 		else if ( parameterValue instanceof Number number ) {
-			return number.doubleValue();
+			return determineNativeNumberValue( number );
 		}
 		else if ( parameterValue instanceof MilvusArray array ) {
+			// See #determineNativeNumberValue for the rationale of these transformations
 			return switch ( array.getBaseDataType() ) {
-				case Float, VarChar, Bool, Double, Int8, Int16, Int32, Int64 -> Arrays.asList( (Object[]) array.getArray() );
+				case Float -> {
+					final Object[] originalArray = (Object[]) array.getArray();
+					final Object[] newArray = new Object[ originalArray.length ];
+					for ( int i = 0; i < originalArray.length; i++ ) {
+						newArray[i] = Double.parseDouble( originalArray[i].toString() );
+					}
+					yield Arrays.asList( newArray );
+				}
+				case Int8, Int16 -> {
+					final Object[] originalArray = (Object[]) array.getArray();
+					final Object[] newArray = new Object[ originalArray.length ];
+					for ( int i = 0; i < originalArray.length; i++ ) {
+						newArray[i] = ((Number) originalArray[i]).intValue();
+					}
+					yield Arrays.asList( newArray );
+				}
+				case Bool, VarChar, Double, Int32, Int64 -> Arrays.asList( (Object[]) array.getArray() );
 				default -> throw new SQLException( "Unsupported vector type: " + array.getArray().getClass().getName() );
 			};
 		}
@@ -548,6 +577,7 @@ public class MilvusConnection implements Connection {
 		else if ( parameterValue instanceof byte[] bytes ) {
 			final ArrayList<Object> arrayList = new ArrayList<>( bytes.length );
 			for ( byte b : bytes ) {
+				// See #determineNativeNumberValue for the rationale of this transformation
 				arrayList.add( (int) b );
 			}
 			return arrayList;
@@ -555,6 +585,7 @@ public class MilvusConnection implements Connection {
 		else if ( parameterValue instanceof short[] shorts ) {
 			final ArrayList<Object> arrayList = new ArrayList<>( shorts.length );
 			for ( short s : shorts ) {
+				// See #determineNativeNumberValue for the rationale of this transformation
 				arrayList.add( (int) s );
 			}
 			return arrayList;
@@ -576,7 +607,8 @@ public class MilvusConnection implements Connection {
 		else if ( parameterValue instanceof float[] floats ) {
 			final ArrayList<Object> arrayList = new ArrayList<>( floats.length );
 			for ( float f : floats ) {
-				arrayList.add( f );
+				// See #determineNativeNumberValue for the rationale of this transformation
+				arrayList.add( Double.parseDouble( Float.toString( f ) ) );
 			}
 			return arrayList;
 		}
@@ -689,7 +721,7 @@ public class MilvusConnection implements Connection {
 		for ( MilvusTypedValue value : data ) {
 			final BaseVector vector;
 			if ( value instanceof MilvusParameterValue parameter ) {
-				final Object parameterValue = parameterValues[parameter.position()];
+				final Object parameterValue = parameterValues[parameter.index()];
 				if ( parameterValue instanceof float[] floats ) {
 					vector = new FloatVec( floats );
 				}
@@ -870,7 +902,7 @@ public class MilvusConnection implements Connection {
 		final ArrayList<Object> arrayList = new ArrayList<>( ids.size() );
 		for ( MilvusTypedValue value : ids ) {
 			if ( value  instanceof MilvusParameterValue parameterValue ) {
-				final Object idValue = determineTemplateValue( parameterValues[parameterValue.position()] );
+				final Object idValue = determineTemplateValue( parameterValues[parameterValue.index()] );
 				if ( idValue instanceof List<?> idValues ) {
 					arrayList.addAll( idValues );
 				}

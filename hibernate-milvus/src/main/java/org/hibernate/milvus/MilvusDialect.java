@@ -150,14 +150,15 @@ public class MilvusDialect extends Dialect {
 		final DdlTypeRegistry ddlTypeRegistry = typeConfiguration.getDdlTypeRegistry();
 		final BasicTypeRegistry basicTypeRegistry = typeConfiguration.getBasicTypeRegistry();
 
-		jdbcTypeRegistry.addDescriptor( UuidAsVarcharJdbcType.INSTANCE );
+		typeContributions.contributeJdbcType( UuidAsVarcharJdbcType.INSTANCE );
+		typeContributions.contributeJdbcType( MilvusJsonJdbcType.INSTANCE );
 
 		final BasicType<Float> floatBasicType = basicTypeRegistry.resolve( StandardBasicTypes.FLOAT );
 		final BasicType<Byte> byteBasicType = basicTypeRegistry.resolve( StandardBasicTypes.BYTE );
 		final ArrayJdbcType vectorJdbcType = new MilvusVectorJdbcType( jdbcTypeRegistry.getDescriptor( SqlTypes.FLOAT ) );
 		final ArrayJdbcType binaryVectorJdbcType = new MilvusBinaryVectorJdbcType( jdbcTypeRegistry.getDescriptor( SqlTypes.TINYINT ) );
-		jdbcTypeRegistry.addDescriptor( SqlTypes.VECTOR, vectorJdbcType );
-		jdbcTypeRegistry.addDescriptor( SqlTypes.VECTOR_INT8, binaryVectorJdbcType );
+		typeContributions.contributeJdbcType( vectorJdbcType );
+		typeContributions.contributeJdbcType( binaryVectorJdbcType );
 		for ( Type vectorJavaType : VECTOR_JAVA_TYPES ) {
 			basicTypeRegistry.register(
 					new BasicArrayType<>(
@@ -184,13 +185,16 @@ public class MilvusDialect extends Dialect {
 		ddlTypeRegistry.addDescriptor(
 				new DdlTypeImpl( SqlTypes.VECTOR_INT8, "binary_vector", this )
 		);
-		// todo (milvus): json type?
+		ddlTypeRegistry.addDescriptor(
+				new DdlTypeImpl( SqlTypes.JSON, "json", this )
+		);
 	}
 
 	@Override
 	public void initializeFunctionRegistry(FunctionContributions functionContributions) {
 		super.initializeFunctionRegistry( functionContributions );
-		final BasicTypeRegistry basicTypeRegistry = functionContributions.getTypeConfiguration().getBasicTypeRegistry();
+		final TypeConfiguration typeConfiguration = functionContributions.getTypeConfiguration();
+		final BasicTypeRegistry basicTypeRegistry = typeConfiguration.getBasicTypeRegistry();
 		final SqmFunctionRegistry functionRegistry = functionContributions.getFunctionRegistry();
 		final BasicType<Double> doubleType = basicTypeRegistry.resolve( StandardBasicTypes.DOUBLE );
 		registerVectorDistanceFunction( functionRegistry, "cosine_distance", doubleType );
@@ -207,6 +211,7 @@ public class MilvusDialect extends Dialect {
 		registerVectorDistanceFunction( functionRegistry, "jaccard_distance", doubleType );
 
 		// todo (milvus): array and json functions?
+		functionRegistry.register( "json_value", new MilvusJsonValueFunction( typeConfiguration ) );
 	}
 
 	private void registerVectorDistanceFunction(

@@ -102,10 +102,10 @@ public class MilvusTableExporter implements Exporter<Table> {
 		}
 
 		if ( !hasVector && context.getDialect().getVersion().isSameOrAfter( 2, 4, 2 ) ) {
-			fieldsNeedingIndex.put( "embedding", fields.size() );
+			fieldsNeedingIndex.put( MilvusSqlAstTranslator.DEFAULT_EMBEDDING_FIELD, fields.size() );
 			// As of 2.4.2 a schema requires at least one vector field: https://github.com/milvus-io/milvus/issues/33853
 			fields.add( new MilvusCreateCollection.FieldSchema(
-					"embedding",
+					MilvusSqlAstTranslator.DEFAULT_EMBEDDING_FIELD,
 					null,
 					DataType.FloatVector,
 					null,
