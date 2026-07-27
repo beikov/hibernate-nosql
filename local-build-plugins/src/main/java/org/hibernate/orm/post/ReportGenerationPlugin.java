@@ -55,7 +55,19 @@ public class ReportGenerationPlugin implements Plugin<Project> {
 		final var loggingTask = project.getTasks().register(
 				"generateLoggingReport",
 				LoggingReportTask.class,
-				(task) -> task.dependsOn( indexerTask )
+				(task) -> {
+					task.dependsOn( indexerTask );
+					Set<String> packages = new HashSet<>();
+					for ( Project subProject : project.getRootProject().getAllprojects() ) {
+						final String moduleName =
+								subProject.getName().substring( subProject.getName().lastIndexOf( '-' ) + 1 );
+						if ( !"core".equals( moduleName ) ) {
+							packages.add( "org.hibernate." + moduleName );
+						}
+					}
+					packages.add( "org.hibernate.nosql" );
+					task.getSourcePackages().set( packages );
+				}
 		);
 
 		final var dialectConfig = project.getConfigurations()

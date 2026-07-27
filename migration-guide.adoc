@@ -44,7 +44,6 @@ See the link:{releaseSeriesBase}#whats-new[website] for the list of new features
 This section describes changes to contracts (classes, interfaces, methods, etc.) which are considered https://hibernate.org/community/compatibility-policy/#api[API].
 
 
-
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // SPI changes
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -54,10 +53,6 @@ This section describes changes to contracts (classes, interfaces, methods, etc.)
 
 This section describes changes to contracts (classes, interfaces, methods, etc.) which are considered https://hibernate.org/community/compatibility-policy/#spi[SPI].
 
-[[persistence-context]]
-=== Removed `PersistenceContext.reentrantSafeEntityEntries()`
-
-The deprecated `PersistenceContext.reentrantSafeEntityEntries()` method has been removed. The replacement method is `PersistenceContext.reentrantSafeManagedEntities()`.
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // Changes in Behavior
@@ -97,9 +92,3 @@ Such changes typically do not impact programs using a relational schema managed 
 == Changes in Dependencies
 
 This section describes changes to dependencies used by Hibernate NoSQL.
-
-[[dependency-changes-micrometer]]
-=== Micrometer dependency is now provided
-
-The `hibernate-micrometer` module no longer pulls `io.micrometer:micrometer-core` as a transitive runtime dependency.
-Applications using this module must now explicitly add `io.micrometer:micrometer-core` to their classpath.

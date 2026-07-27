@@ -17,6 +17,8 @@ include::Preface.adoc[]
 :numbered:
 
 include::chapters/compatibility/Compatibility.adoc[]
+include::chapters/overview/Overview.adoc[]
+include::chapters/datastores/Datastores.adoc[]
 
 include::Credits.adoc[]
 

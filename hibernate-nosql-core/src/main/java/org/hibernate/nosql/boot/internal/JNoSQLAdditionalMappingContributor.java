@@ -50,6 +50,7 @@ import org.hibernate.models.spi.MethodDetails;
 import org.hibernate.models.spi.ModelsContext;
 import org.hibernate.models.spi.MutableAnnotationTarget;
 import org.hibernate.models.spi.MutableClassDetails;
+import org.hibernate.nosql.Version;
 import org.hibernate.type.SqlTypes;
 
 import java.io.File;
@@ -67,6 +68,11 @@ public class JNoSQLAdditionalMappingContributor implements AdditionalMappingCont
 
 	private static final MethodHandles.Lookup LOOKUP = MethodHandles.lookup();
 	private static final boolean DEBUG = false;
+
+
+	static {
+		Version.logVersion();
+	}
 
 	@Override
 	public void contribute(AdditionalMappingContributions contributions, InFlightMetadataCollector metadata, ResourceStreamLocator resourceStreamLocator, MetadataBuildingContext buildingContext) {

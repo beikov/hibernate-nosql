@@ -891,8 +891,8 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	@Override
 	protected void renderFetchExpression(Expression fetchExpression) {
 		final AbstractMilvusQuery milvusQuery = (AbstractMilvusQuery) milvusStatement;
-		final Number offset = getLiteralValue( fetchExpression );
-		milvusQuery.setLimit( offset.longValue() );
+		final Number limit = getLiteralValue( fetchExpression );
+		milvusQuery.setLimit( limit.longValue() );
 	}
 
 	@Override

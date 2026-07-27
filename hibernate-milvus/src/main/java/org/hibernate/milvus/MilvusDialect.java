@@ -12,6 +12,9 @@ import org.hibernate.dialect.DatabaseVersion;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.SimpleDatabaseVersion;
 import org.hibernate.dialect.TimeZoneSupport;
+import org.hibernate.dialect.function.CommonFunctionFactory;
+import org.hibernate.dialect.function.array.ArrayArgumentValidator;
+import org.hibernate.dialect.function.array.ArrayConstructorFunction;
 import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
 import org.hibernate.engine.jdbc.env.spi.IdentifierCaseStrategy;
 import org.hibernate.engine.jdbc.env.spi.IdentifierHelper;
@@ -54,10 +57,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static java.lang.Integer.parseInt;
+import static org.hibernate.query.sqm.produce.function.FunctionParameterType.NUMERIC;
 import static org.hibernate.sql.ast.internal.NonLockingClauseStrategy.NON_CLAUSE_STRATEGY;
+import static org.hibernate.type.SqlTypes.*;
 import static org.hibernate.type.SqlTypes.CHAR;
 import static org.hibernate.type.SqlTypes.CLOB;
 import static org.hibernate.type.SqlTypes.DATE;
+import static org.hibernate.type.SqlTypes.DECIMAL;
 import static org.hibernate.type.SqlTypes.FLOAT;
 import static org.hibernate.type.SqlTypes.NCHAR;
 import static org.hibernate.type.SqlTypes.NCLOB;
@@ -155,8 +161,8 @@ public class MilvusDialect extends Dialect {
 
 		final BasicType<Float> floatBasicType = basicTypeRegistry.resolve( StandardBasicTypes.FLOAT );
 		final BasicType<Byte> byteBasicType = basicTypeRegistry.resolve( StandardBasicTypes.BYTE );
-		final ArrayJdbcType vectorJdbcType = new MilvusVectorJdbcType( jdbcTypeRegistry.getDescriptor( SqlTypes.FLOAT ) );
-		final ArrayJdbcType binaryVectorJdbcType = new MilvusBinaryVectorJdbcType( jdbcTypeRegistry.getDescriptor( SqlTypes.TINYINT ) );
+		final ArrayJdbcType vectorJdbcType = new MilvusVectorJdbcType( jdbcTypeRegistry.getDescriptor( FLOAT ) );
+		final ArrayJdbcType binaryVectorJdbcType = new MilvusBinaryVectorJdbcType( jdbcTypeRegistry.getDescriptor( TINYINT ) );
 		typeContributions.contributeJdbcType( vectorJdbcType );
 		typeContributions.contributeJdbcType( binaryVectorJdbcType );
 		for ( Type vectorJavaType : VECTOR_JAVA_TYPES ) {
@@ -180,14 +186,15 @@ public class MilvusDialect extends Dialect {
 			);
 		}
 		ddlTypeRegistry.addDescriptor(
-				new DdlTypeImpl( SqlTypes.VECTOR, "float_vector", this )
+				new DdlTypeImpl( VECTOR, "float_vector", this )
 		);
 		ddlTypeRegistry.addDescriptor(
-				new DdlTypeImpl( SqlTypes.VECTOR_INT8, "binary_vector", this )
+				new DdlTypeImpl( VECTOR_INT8, "binary_vector", this )
 		);
 		ddlTypeRegistry.addDescriptor(
-				new DdlTypeImpl( SqlTypes.JSON, "json", this )
+				new DdlTypeImpl( JSON, "json", this )
 		);
+		// todo (milvus): geometry type
 	}
 
 	@Override
@@ -196,7 +203,9 @@ public class MilvusDialect extends Dialect {
 		final TypeConfiguration typeConfiguration = functionContributions.getTypeConfiguration();
 		final BasicTypeRegistry basicTypeRegistry = typeConfiguration.getBasicTypeRegistry();
 		final SqmFunctionRegistry functionRegistry = functionContributions.getFunctionRegistry();
+		final BasicType<Integer> integerType = basicTypeRegistry.resolve( StandardBasicTypes.INTEGER );
 		final BasicType<Double> doubleType = basicTypeRegistry.resolve( StandardBasicTypes.DOUBLE );
+		final CommonFunctionFactory functionFactory = new CommonFunctionFactory( functionContributions );
 		registerVectorDistanceFunction( functionRegistry, "cosine_distance", doubleType );
 		registerVectorDistanceFunction( functionRegistry, "euclidean_distance", doubleType );
 		registerVectorDistanceFunction( functionRegistry, "euclidean_squared_distance", doubleType );
@@ -210,8 +219,39 @@ public class MilvusDialect extends Dialect {
 		registerVectorDistanceFunction( functionRegistry, "hamming_distance", doubleType );
 		registerVectorDistanceFunction( functionRegistry, "jaccard_distance", doubleType );
 
-		// todo (milvus): array and json functions?
+		functionFactory.mod_operator();
+		functionRegistry.patternDescriptorBuilder( "power", "(?1**?2)" )
+				.setInvariantType(doubleType)
+				.setExactArgumentCount( 2 )
+				.setParameterTypes(NUMERIC, NUMERIC)
+				.register();
+
+		functionRegistry.register( "json_array", new MilvusJsonArrayFunction( typeConfiguration ) );
 		functionRegistry.register( "json_value", new MilvusJsonValueFunction( typeConfiguration ) );
+		functionRegistry.register( "json_query", new MilvusJsonQueryFunction( typeConfiguration ) );
+		functionRegistry.register( "json_exists", new MilvusJsonExistsFunction( typeConfiguration ) );
+		functionRegistry.register( "array", new ArrayConstructorFunction( false, false ) );
+		functionRegistry.register( "array_list", new ArrayConstructorFunction( true, false ) );
+		functionRegistry.namedDescriptorBuilder( "array_length" )
+				.setReturnTypeResolver( StandardFunctionReturnTypeResolvers.invariant( integerType ) )
+				.setArgumentsValidator(
+						StandardArgumentsValidators.composite(
+								StandardArgumentsValidators.exactly( 1 ),
+								ArrayArgumentValidator.DEFAULT_INSTANCE
+						)
+				)
+				.setArgumentListSignature( "(ARRAY array)" )
+				.register();
+
+		functionRegistry.register( "array_get", new MilvusArrayGetFunction() );
+		functionRegistry.register( "array_contains", new MilvusArrayContainsFunction( false, typeConfiguration ) );
+		functionRegistry.register( "array_contains_nullable", new MilvusArrayContainsFunction( true, typeConfiguration ) );
+		functionRegistry.register( "array_includes", new MilvusArrayIncludesFunction( false, typeConfiguration ) );
+		functionRegistry.register( "array_includes_nullable", new MilvusArrayIncludesFunction( true, typeConfiguration ) );
+		functionRegistry.register( "array_intersects", new MilvusArrayIntersectsFunction( false, typeConfiguration ) );
+		functionRegistry.register( "array_intersects_nullable", new MilvusArrayIntersectsFunction( true, typeConfiguration ) );
+
+		// todo (milvus): geometry functions?
 	}
 
 	private void registerVectorDistanceFunction(
@@ -266,6 +306,8 @@ public class MilvusDialect extends Dialect {
 		return switch ( sqlTypeCode ) {
 			case FLOAT, REAL -> "float";
 			case CHAR,VARCHAR, NCHAR, NVARCHAR, CLOB, NCLOB -> "varchar";
+			// Milvus has no support for arbitrary precision numeric types
+			case SqlTypes.NUMERIC, DECIMAL -> columnType( DOUBLE );
 			case DATE, TIME, TIMESTAMP, TIMESTAMP_UTC, TIME_WITH_TIMEZONE, TIMESTAMP_WITH_TIMEZONE -> "timestamptz";
 			default -> super.columnType( sqlTypeCode );
 		};
