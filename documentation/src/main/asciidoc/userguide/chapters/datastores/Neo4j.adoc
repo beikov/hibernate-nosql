@@ -1,0 +1,37 @@
+[[neo4j]]
+=== Neo4j
+
+Neo4j is a graph database with lots of functionality. The `hibernate-neo4j` artifact strives to
+support CRUD functionality and many kinds of search queries and functions.
+
+The hibernate-neo4j is designed to work with the official JDBC driver `org.neo4j:neo4j-jdbc-full-bundle`
+via the class `org.neo4j.jdbc.Neo4jDriver`.
+The JDBC URL format is `jdbc:neo4j://<host>[:<port>]/<database>[?queryParam1=value1[&queryParam2=value2]*]`.
+For further details, consult the link:https://neo4j.com/docs/jdbc-manual/current/[driver documentation of the vendor].
+
+The short name `Neo4j` will automatically resolve to the dialect class `org.hibernate.neo4j.Neo4jDialect` when
+configured for the `hibernate.dialect` configuration property, but note that the `Neo4jDialect` will be automatically
+selected through the `DialectResolver` contract, unless `hibernate.boot.allow_jdbc_metadata_access` is set to `false`.
+
+==== Features and considerations
+
+===== Schema generation support
+
+Schema generation is supported and constraints are emitted, depending on database support, since not null constraints
+are only supported in the Neo4j enterprise edition.
+
+===== Cypher as native query language
+
+This dialect renders Cypher queries instead of relying on the SQL translation layer of the Neo4j JDBC driver,
+which means that SQL fragments (e.g. `@ColumnTransformer`, `@Formula`, `@JoinFormula`, `@GeneratedColumn`, `@Filter`, `@FilterJoinTable`, `@SQLRestriction`, `@SQLJoinTableRestriction`, `@SQLOrder`)
+need to be valid Cypher fragments.
+
+==== Limitations
+
+===== Limited query support
+
+Neo4j supports many querying features, yet some translations have not been implemented yet or are simply lacking.
+The following is a non-exhaustive list of HQL/Criteria features that **DON'T** work
+
+* Insert-Select statements
+* Subquery in update `set` clause

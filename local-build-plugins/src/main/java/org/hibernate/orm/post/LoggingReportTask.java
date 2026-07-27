@@ -7,6 +7,8 @@ package org.hibernate.orm.post;
 import org.gradle.api.file.RegularFile;
 import org.gradle.api.provider.Property;
 import org.gradle.api.provider.Provider;
+import org.gradle.api.provider.SetProperty;
+import org.gradle.api.tasks.Input;
 import org.gradle.api.tasks.TaskAction;
 import org.jboss.jandex.AnnotationInstance;
 import org.jboss.jandex.AnnotationValue;
@@ -43,12 +45,19 @@ public abstract class LoggingReportTask extends AbstractJandexAwareTask {
 	public static final DotName ID_RANGE_ANN_NAME = createSimple( "org.jboss.logging.annotations.ValidIdRange" );
 	public static final DotName MSG_ANN_NAME = createSimple( "org.jboss.logging.annotations.Message" );
 
+	private final SetProperty<String> sourcePackages;
 	private final Property<RegularFile> reportFile;
 
 	public LoggingReportTask() {
 		setDescription( "Generates a report of \"system\" logging" );
+		sourcePackages = getProject().getObjects().setProperty(String.class);
 		reportFile = getProject().getObjects().fileProperty();
 		reportFile.convention( getProject().getLayout().getBuildDirectory().file( "orm/generated/logging/index.adoc" ) );
+	}
+
+	@Input
+	public SetProperty<String> getSourcePackages() {
+		return sourcePackages;
 	}
 
 	@Override
@@ -62,58 +71,75 @@ public abstract class LoggingReportTask extends AbstractJandexAwareTask {
 		final TreeSet<IdRange> idRanges = new TreeSet<>( Comparator.comparing( IdRange::getMinValue ) );
 
 		final Index index = getIndexManager().getIndex();
+		final String[] prefixes = new String[this.sourcePackages.get().size()];
+		int i = 0;
+		for ( String sourcePackage : this.sourcePackages.get() ) {
+			prefixes[i++] = sourcePackage + ".";
+		}
 		final List<AnnotationInstance> subSysAnnUsages = index.getAnnotations( SUB_SYS_ANN_NAME );
 		final List<AnnotationInstance> msgLoggerAnnUsages = index.getAnnotations( MSG_LOGGER_ANN_NAME );
 
 		subSysAnnUsages.forEach( (ann) -> {
-			final SubSystem subSystem = new SubSystem(
-					ann.value( "name" ).asString(),
-					ann.value( "description" ).asString(),
-					ann.target().asClass().simpleName()
-			);
-			subSystemByName.put( subSystem.name, subSystem );
+			if ( startsWithAny( ann.target().asClass().name().toString(), prefixes ) ) {
+				final SubSystem subSystem = new SubSystem(
+						ann.value( "name" ).asString(),
+						ann.value( "description" ).asString(),
+						ann.target().asClass().simpleName()
+				);
+				subSystemByName.put( subSystem.name, subSystem );
+			}
 		} );
 
 
 		msgLoggerAnnUsages.forEach( (msgLoggerAnnUsage) -> {
-			// find its id-range annotation, if one
 			final ClassInfo loggerClassInfo = msgLoggerAnnUsage.target().asClass();
-			final AnnotationInstance subSystemAnnUsage = loggerClassInfo.declaredAnnotation( SUB_SYS_ANN_NAME );
+			if ( startsWithAny( loggerClassInfo.name().toString(), prefixes ) ) {
+				// find its id-range annotation, if one
+				final AnnotationInstance subSystemAnnUsage = loggerClassInfo.declaredAnnotation( SUB_SYS_ANN_NAME );
 
-			final SubSystem subSystem;
-			if ( subSystemAnnUsage != null ) {
-				subSystem = subSystemByName.get( subSystemAnnUsage.value( "name" ).asString() );
-			}
-			else {
-				subSystem = null;
-			}
-
-			final IdRange idRange;
-			final AnnotationInstance idRangeAnnUsage = loggerClassInfo.declaredAnnotation( ID_RANGE_ANN_NAME );
-			if ( idRangeAnnUsage == null ) {
-				idRange = calculateIdRange( msgLoggerAnnUsage, subSystem );
-			}
-			else {
-				idRange = new IdRange(
-						asIntOrDefault( idRangeAnnUsage, "min" , 1 ),
-						asIntOrDefault( idRangeAnnUsage, "max" , 999999 ),
-						true,
-						loggerClassInfo.simpleName(),
-						subSystem
-				);
-				if ( subSystem != null ) {
-					subSystem.idRange = idRange;
+				final SubSystem subSystem;
+				if ( subSystemAnnUsage != null ) {
+					subSystem = subSystemByName.get( subSystemAnnUsage.value( "name" ).asString() );
 				}
-			}
+				else {
+					subSystem = null;
+				}
 
-			if ( idRange != null ) {
-				idRanges.add( idRange );
+				final IdRange idRange;
+				final AnnotationInstance idRangeAnnUsage = loggerClassInfo.declaredAnnotation( ID_RANGE_ANN_NAME );
+				if ( idRangeAnnUsage == null ) {
+					idRange = calculateIdRange( msgLoggerAnnUsage, subSystem );
+				}
+				else {
+					idRange = new IdRange(
+							asIntOrDefault( idRangeAnnUsage, "min", 1 ),
+							asIntOrDefault( idRangeAnnUsage, "max", 999999 ),
+							true,
+							loggerClassInfo.simpleName(),
+							subSystem
+					);
+					if ( subSystem != null ) {
+						subSystem.idRange = idRange;
+					}
+				}
+
+				if ( idRange != null ) {
+					idRanges.add( idRange );
+				}
 			}
 		} );
 
 		generateReport( subSystemByName, idRanges );
 	}
 
+	private boolean startsWithAny(String string, String[] prefixes) {
+		for ( String sourcePackagePrefix : prefixes ) {
+			if ( string.startsWith( sourcePackagePrefix ) ) {
+				return true;
+			}
+		}
+		return false;
+	}
 
 	private IdRange calculateIdRange(AnnotationInstance msgLoggerAnnUsage, SubSystem subSystem) {
 		final ClassInfo loggerClassInfo = msgLoggerAnnUsage.target().asClass();

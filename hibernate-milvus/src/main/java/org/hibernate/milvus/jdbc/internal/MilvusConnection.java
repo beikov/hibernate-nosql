@@ -538,9 +538,6 @@ public class MilvusConnection implements Connection {
 			|| parameterValue instanceof String ) {
 			return parameterValue;
 		}
-		else if ( parameterValue instanceof Byte number ) {
-			return number.intValue();
-		}
 		else if ( parameterValue instanceof Number number ) {
 			return determineNativeNumberValue( number );
 		}

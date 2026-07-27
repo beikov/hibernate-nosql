@@ -77,7 +77,7 @@ Maven::
 [[compatibility-database]]
 === Database
 
-Hibernate {fullVersion}'s compatibility with a given database and version
+Hibernate NoSQL {fullVersion}'s compatibility with a given database and version
 depends on the dialect being used.
 
 Refer to the link:{doc-dialect-url}[Dialects] guide for details about both dialects and supported databases.

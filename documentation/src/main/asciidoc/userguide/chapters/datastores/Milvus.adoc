@@ -1,0 +1,128 @@
+[[milvus]]
+=== Milvus
+
+Milvus is a very targeted database, with its main focus on vector search. The `hibernate-milvus` artifact strives to
+support CRUD functionality, basic queries and common HQL/Criteria vector search queries.
+
+The hibernate-milvus module implements the JDBC driver API on top of the native driver `io.milvus:milvus-sdk-java`
+via the class `org.hibernate.milvus.jdbc.internal.MilvusDriver`.
+The JDBC URL format is `jdbc:milvus://<host>[:<port>]/<database>[?queryParam1=value1[&queryParam2=value2]*]` and supports
+the following query parameters:
+
+* `secure` - `true` or `false` (default) indicating whether to use `https` or `http` to connect to the database host
+
+The short name `Milvus` will automatically resolve to the dialect class `org.hibernate.milvus.MilvusDialect` when
+configured for the `hibernate.dialect` configuration property, but note that the `MilvusDialect` will be automatically
+selected through the `DialectResolver` contract, unless `hibernate.boot.allow_jdbc_metadata_access` is set to `false`.
+
+==== Features and considerations
+
+===== Schema generation support
+
+Schema generation is supported, but Milvus requires that a collection (table) contains at least one vector field
+(non-null until version 3.0) and that an index exists, as well as that the collection is "loaded".
+This artifact will automatically add a vector field named `embedding`, if no vector field was found on an entity mapping
+and fill it with a `[0, 0]` vector on insert. It will also create a COSINE vector index automatically and load the
+collection via the schema generation (hbm2ddl).
+
+Indexes can also be declared via the Jakarta Persistence `@Table(indexes)` annotation and will create automatic indexes
+or vector indexes, depending on the type of the column/field.
+
+Declaring an index for a vector field, will create a vector index. To specify the metric or other index parameters,
+provide the `options` member and give a comma-separated list of assignment-operator-separated key-value pairs
+e.g. `@Index( name = "VectorEntity_ip", columnList = "the_ip_vector", options = "metric=ip")`.
+
+Supported values for `metric` are defined via the `io.milvus.v2.common.IndexParam.MetricType` enumeration,
+e.g. `l2`, `ip`, `cosine`, `hamming`, `jaccard` etc.
+The valid values for the `type` option are defined via the `io.milvus.v2.common.IndexParam.IndexType` enumeration,
+e.g. `flat`, `ivf_flat`, `hnsw`, `diskann` etc.
+
+Consult the link:https://milvus.io/docs/index-explained.md[vendor documentation] for an explanation of the available
+options per `type`.
+
+===== Vector distance transformation
+
+Plain vector distance function usage in the select clause and order by clause are allowed and transformed appropriately.
+Ordering by distance is only supported in the natural order of the distance metric that means "closer".
+The `inner_product` metric natural order is descending, whereas all the other metrics require ascending order.
+
+Driver requests require that vector distance filtering happens through dedicated values `radius` and `range_filter`.
+In order to support that, the dialect analyzes the predicate and tries to hoist the vector distance filtering as a top-level predicate.
+Therefore, it's important to ensure the vector distance restriction can be hoisted i.e. the following is illegal `x is null or cosine_distance(...) < 1`.
+
+Translation between the vector distance and the native driver score is done automatically, but beware that Milvus only
+has 32-bit float precision for the vector distance/score when trying to compare distance values and the transformations
+between distance and score representation can therefore lead to some inaccuracies when working with exact values.
+If exact values are used, try to round, truncate or simply subtract a slight error margin from the float value.
+
+Note that due to the nature of the fixed comparison operators that are applied for `radius` and `range_filter`, the
+driver might apply slight offsets (`Float.MIN_VALUE`) to filter values to emulate a greater than (`>`) operator when the
+natural operator is greater or equal (`>=`) and so on.
+
+===== Data type transformation
+
+The native Milvus driver does not support transferring 8- or 16-bit integers, as well as 32-bit floats.
+When widening a 32-bit float to a 64-bit double, there is a chance that the string representation of the two values is
+different, which is why this driver chose to widen 32-bit floats by doing `Double.parseDouble( Float.toString( floatValue ) )` instead.
+Keep this in mind when working with floating point comparisons, like vector distance comparisons.
+
+===== Id list transformation
+
+Driver requests require that primary key based filtering happens through a dedicated list of values.
+In order to support that, the dialect analyzes the predicate and tries to hoist the id filtering as a top-level predicate.
+Therefore, it's important to ensure the id restriction can be hoisted i.e. the following is illegal `x is null or id in :list`.
+
+==== Limitations
+
+===== Transaction support
+
+Milvus does **NOT** support transactions, so better ensure that every interaction that you do with your database
+through Hibernate ORM APIs is idempotent.
+
+===== Native query support
+
+Milvus does **NOT** have a native query language. Therefore, the native queries that are passed to the JDBC layer are
+a String serialized form of the request object, to be passed to the native driver. Parsing and serialization is done
+with `org.hibernate.milvus.jdbc.MilvusJsonHelper`, which you can use to construct custom native queries.
+
+===== Limited query support
+
+Milvus lacks many basic querying features. The following is a non-exhaustive list of HQL/Criteria features that **DON'T** work
+
+* CTEs (`with` clause)
+* Select statements in `from` clause
+* Set operations (`union`, `except`, `intersect`)
+* Insert-Select statements
+* Select statement with `distinct` clause
+* `select` clause with anything but path or vector distance items
+* Joins
+* Subqueries
+* `having` clause
+* `group by` clause with more than one item or non-path item
+* `order by` clause with anything but natural vector distance order (until Milvus 3.0)
+* `fetch` clause with anything but `ROWS ONLY`
+* `update` statement with `where` clause other than single primary key restriction
+* Anything involving SQL fragments e.g. `@ColumnTransformer`, `@Formula`, `@JoinFormula`, `@GeneratedColumn`, `@Filter`, `@FilterJoinTable`, `@SQLRestriction`, `@SQLJoinTableRestriction`, `@SQLOrder`
+* Anything involving SQL statements e.g. `@NamedNativeQuery`, `@SQLSelect`, `SQLDelete`, `@SQLInsert`, `@SQLUpdate`
+* `@Inheritance(strategy)` other than `SINGLE_TABLE`
+* Locking (optimistic and pessimistic) as well as `@Version`
+* Case insensitive `like` predicate
+* Not equal (`<>`/`!=`) or `is distinct from` operator for vector distance
+* No or multiple `from` clause items
+* Functions anywhere but in the `where` clause, except vector distance and aggregate functions in `select` clause
+* Most functions, except
+** `mod`
+** `power`
+** `json_array`
+** `json_value`
+** `json_query`
+** `json_exists`
+** `array`
+** `array_list`
+** `array_length`
+** `array_get`
+** `array_contains`
+** `array_includes`
+** `array_intersects`
+** `<metric>_distance` i.e. vector distance functions
+** No support for `binary`, `varbinary` and `blob` data types

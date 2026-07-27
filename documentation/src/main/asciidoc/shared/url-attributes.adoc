@@ -7,7 +7,7 @@ include::./common-attributes.adoc[]
 :doc-base-url: https://docs.hibernate.org/nosql
 :doc-orm-base-url: https://docs.hibernate.org/orm
 :doc-version-base-url: {doc-base-url}/{majorMinorVersion}
-:doc-version-base-url: {doc-orm-base-url}/{majorMinorVersion}
+:doc-orm-version-base-url: {doc-orm-base-url}/{majorMinorVersion}
 :doc-migration-guide-url: {doc-version-base-url}/migration-guide/
 :doc-quick-start-url: {doc-version-base-url}/quickstart/html_single/
 :doc-query-language-url: {doc-orm-version-base-url}/querylanguage/html_single/

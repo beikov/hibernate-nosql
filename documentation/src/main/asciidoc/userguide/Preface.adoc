@@ -21,20 +21,12 @@ However, Hibernate NoSQL can certainly help you to remove or encapsulate vendor-
 [[system-requirements]]
 === System Requirements
 
-Hibernate {majorMinorVersion} requires at least Java {javaCompatibleVersions} and JDBC 4.2.
+Hibernate NoSQL {majorMinorVersion} requires at least Java {javaCompatibleVersions} and JDBC 4.2.
 
 [[getting-started]]
 === Getting Started
 
 include::{shared-attributes-dir}/background.adoc[]
-
-[TIP]
-====
-New users may want to first look at the tutorial-style link:{doc-quick-start-url}[Quick Start] guide.
-
-This User Guide is really more of a reference guide.
-====
-
 
 === Get Involved
 

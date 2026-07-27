@@ -1,0 +1,24 @@
+[[overview]]
+== Overview
+
+[[modules]]
+=== Modules
+
+Hibernate NoSQL is split into
+
+* hibernate-nosql-core - Implementation of the link:https://jakarta.ee/specifications/nosql/[Jakarta JNoSQL specification]
+* hibernate-platform - The platform or bill-of-materials (BOM) module which can be used to align versions of the Hibernate modules along with the versions of its libraries
+* hibernate-<nosql-database> - A module per supported NoSQL database, enabling the use of Hibernate ORM APIs with that database
+
+[[relation-to-hibernate-orm-and-jdbc]]
+=== Relation to Hibernate ORM and JDBC
+
+The various Hibernate NoSQL database modules make use of Hibernate ORM SPIs, like `Dialect`, to implement support for the respective NoSQL database.
+Sometimes these modules also come with a minimal JDBC driver implementation, that delegates work to an underlying native driver,
+which is supported by the NoSQL database vendor directly.
+
+The goal of these JDBC driver implementations is not to fully implement the JDBC specification, but rather implement
+enough aspects, such that Hibernate ORM can reasonably work with them. The JDBC drivers that come with these modules
+are only intended to be used with Hibernate ORM and not directly by an application, since the drivers will require
+passing the native query language, as well as special parameter markers or use a certain serialization format.
+Similarly, binding/extraction of parameters/results for various data types is only implemented for the purposes of Hibernate ORM.

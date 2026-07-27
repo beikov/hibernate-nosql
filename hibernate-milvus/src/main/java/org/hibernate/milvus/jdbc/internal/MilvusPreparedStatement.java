@@ -100,8 +100,6 @@ public class MilvusPreparedStatement extends MilvusStatement implements Prepared
 		return executeQuery().getMetaData();
 	}
 
-	// todo (milvus): implement conversion
-
 	@Override
 	public void setNull(int parameterIndex, int sqlType) throws SQLException {
 		checkIndex( parameterIndex );
