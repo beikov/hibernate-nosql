@@ -26,13 +26,15 @@ import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLXML;
 import java.sql.Time;
 import java.sql.Timestamp;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
 
 public class MilvusPreparedStatement extends MilvusStatement implements PreparedStatement {
 
 	private final MilvusStatementDefinition statement;
-	private final Object[] params;
+	Object[] params;
+	ArrayList<Object[]> batchParameters;
 
 	public MilvusPreparedStatement(MilvusConnection connection, String sql) throws SQLException {
 		super( connection );
@@ -74,20 +76,28 @@ public class MilvusPreparedStatement extends MilvusStatement implements Prepared
 
 	@Override
 	public void addBatch() throws SQLException {
-		// todo (milvus): implement
-		throw new SQLFeatureNotSupportedException();
+		checkClosed();
+		if ( batchParameters == null ) {
+			batchParameters = new ArrayList<>();
+		}
+		batchParameters.add( params );
+		params = new Object[params.length];
 	}
 
 	@Override
 	public void clearBatch() throws SQLException {
-		// todo (milvus): implement
-		throw new SQLFeatureNotSupportedException();
+		checkClosed();
+		if ( batchParameters != null ) {
+			batchParameters.clear();
+		}
 	}
 
 	@Override
 	public int[] executeBatch() throws SQLException {
-		// todo (milvus): implement
-		throw new SQLFeatureNotSupportedException();
+		checkClosed();
+		final int[] result = executeBatchUpdate( statement, batchParameters );
+		this.clearBatch();
+		return result;
 	}
 
 	@Override

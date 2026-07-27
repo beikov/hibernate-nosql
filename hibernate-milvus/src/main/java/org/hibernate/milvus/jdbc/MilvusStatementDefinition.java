@@ -11,6 +11,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonSubTypes({
 		@JsonSubTypes.Type(value = MilvusCreateCollection.class),
 		@JsonSubTypes.Type(value = MilvusDropCollection.class),
+		@JsonSubTypes.Type(value = MilvusTruncateCollection.class),
 		@JsonSubTypes.Type(value = MilvusQuery.class),
 		@JsonSubTypes.Type(value = MilvusSearch.class),
 		@JsonSubTypes.Type(value = MilvusHybridSearch.class),
@@ -19,7 +20,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 		@JsonSubTypes.Type(value = MilvusDelete.class)
 })
 public sealed interface MilvusStatementDefinition
-		permits MilvusCreateCollection, MilvusDropCollection, MilvusHybridSearch, MilvusInsert, MilvusQuery, MilvusSearch, MilvusUpsert, MilvusDelete {
+		permits MilvusCreateCollection, MilvusDropCollection, MilvusTruncateCollection, MilvusHybridSearch, MilvusInsert, MilvusQuery, MilvusSearch, MilvusUpsert, MilvusDelete {
 
 	int parameterCount();
 }

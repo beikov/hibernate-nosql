@@ -19,14 +19,18 @@ import org.hibernate.milvus.jdbc.MilvusJsonHelper;
 import org.hibernate.milvus.jdbc.MilvusQuery;
 import org.hibernate.milvus.jdbc.MilvusSearch;
 import org.hibernate.milvus.jdbc.MilvusStatementDefinition;
+import org.hibernate.milvus.jdbc.MilvusTruncateCollection;
 import org.hibernate.milvus.jdbc.MilvusUpsert;
 
+import java.sql.BatchUpdateException;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLWarning;
 import java.sql.Statement;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 public class MilvusStatement implements Statement {
@@ -35,6 +39,7 @@ public class MilvusStatement implements Statement {
 
 	final MilvusConnection connection;
 
+	ArrayList<String> batchStatements;
 	boolean closed;
 	ResultSet resultSet;
 	ResultSet generatedResultSet;
@@ -102,6 +107,10 @@ public class MilvusStatement implements Statement {
 			connection.dropCollection( dropCollection );
 			updateCount = 1;
 		}
+		else if ( statement instanceof MilvusTruncateCollection truncateCollection ) {
+			connection.truncateCollection( truncateCollection );
+			updateCount = -1;
+		}
 		else if ( statement instanceof MilvusInsert insert ) {
 			InsertResp insertResp = connection.executeInsert( insert, parameterValues );
 			updateCount = (int) insertResp.getInsertCnt();
@@ -111,6 +120,8 @@ public class MilvusStatement implements Statement {
 		else if ( statement instanceof MilvusUpsert upsert ) {
 			UpsertResp upsertResp = connection.executeUpsert( upsert, parameterValues );
 			updateCount = (int) upsertResp.getUpsertCnt();
+			List<Object> primaryKeys = upsertResp.getPrimaryKeys();
+			generatedResultSet = new MilvusGeneratedKeysResultSet( this, upsert.getCollectionName(), primaryKeys );
 		}
 		else if ( statement instanceof MilvusDelete delete ) {
 			DeleteResp deleteResp = connection.executeDelete( delete, parameterValues );
@@ -120,6 +131,41 @@ public class MilvusStatement implements Statement {
 			throw new SQLException( "Unsupported statement type for executeUpdate: " + statement.getClass().getName() );
 		}
 		return updateCount;
+	}
+
+	int[] executeBatchUpdate(MilvusStatementDefinition statement, ArrayList<Object[]> batchParameterValues) throws SQLException {
+		int[] result = new int[batchParameterValues.size()];
+		int i = 0;
+
+		if ( statement instanceof MilvusInsert insert ) {
+			InsertResp insertResp = connection.executeBatchInsert( insert, batchParameterValues );
+			updateCount = (int) insertResp.getInsertCnt();
+			Arrays.fill( result, 1 );
+			List<Object> primaryKeys = insertResp.getPrimaryKeys();
+			generatedResultSet = new MilvusGeneratedKeysResultSet( this, insert.getCollectionName(), primaryKeys );
+		}
+		else if ( statement instanceof MilvusUpsert upsert ) {
+			UpsertResp upsertResp = connection.executeBatchUpsert( upsert, batchParameterValues );
+			updateCount = (int) upsertResp.getUpsertCnt();
+			Arrays.fill( result, 1 );
+			List<Object> primaryKeys = upsertResp.getPrimaryKeys();
+			generatedResultSet = new MilvusGeneratedKeysResultSet( this, upsert.getCollectionName(), primaryKeys );
+		}
+		else {
+			for ( Object[] batchParams : batchParameterValues ) {
+				try {
+					result[i] = executeUpdate( statement, batchParams );
+				}
+				catch (SQLException ex) {
+					int[] partial = new int[i];
+					System.arraycopy( result, 0, partial, 0, i );
+					throw new BatchUpdateException( ex.getMessage(), ex.getSQLState(), partial, ex );
+				}
+
+				++i;
+			}
+		}
+		return result;
 	}
 
 	boolean execute(MilvusStatementDefinition statement, Object[] parameterValues) throws SQLException {
@@ -298,20 +344,47 @@ public class MilvusStatement implements Statement {
 
 	@Override
 	public void addBatch(String sql) throws SQLException {
-		// todo (milvus): implement
-		throw new SQLFeatureNotSupportedException();
+		checkClosed();
+		if ( sql != null && !sql.isBlank() ) {
+			if ( batchStatements == null ) {
+				batchStatements = new ArrayList<>();
+			}
+			batchStatements.add( sql );
+		}
+		else {
+			throw new SQLException( "Illegal null or empty sql" );
+		}
 	}
 
 	@Override
 	public void clearBatch() throws SQLException {
-		// todo (milvus): implement
-		throw new SQLFeatureNotSupportedException();
+		checkClosed();
+		if ( batchStatements != null ) {
+			batchStatements.clear();
+		}
 	}
 
 	@Override
 	public int[] executeBatch() throws SQLException {
-		// todo (milvus): implement
-		throw new SQLFeatureNotSupportedException();
+		checkClosed();
+		int[] result = new int[batchStatements.size()];
+		int i = 0;
+
+		for ( String sql : batchStatements ) {
+			try {
+				result[i] = executeUpdate( sql );
+			}
+			catch (SQLException ex) {
+				int[] partial = new int[i];
+				System.arraycopy( result, 0, partial, 0, i );
+				throw new BatchUpdateException( ex.getMessage(), ex.getSQLState(), partial, ex );
+			}
+
+			++i;
+		}
+
+		this.clearBatch();
+		return result;
 	}
 
 	@Override
