@@ -23,6 +23,8 @@ import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.internal.util.StringHelper;
 import org.hibernate.mapping.Index;
 import org.hibernate.mapping.Table;
+import org.hibernate.milvus.jdbc.MilvusJsonHelper;
+import org.hibernate.milvus.jdbc.MilvusTruncateCollection;
 import org.hibernate.query.sqm.function.SqmFunctionRegistry;
 import org.hibernate.query.sqm.produce.function.StandardArgumentsValidators;
 import org.hibernate.query.sqm.produce.function.StandardFunctionReturnTypeResolvers;
@@ -279,6 +281,11 @@ public class MilvusDialect extends Dialect {
 			throws SQLException {
 		builder.setUnquotedCaseStrategy( IdentifierCaseStrategy.MIXED );
 		return super.buildIdentifierHelper( builder, metadata );
+	}
+
+	@Override
+	public String getTruncateTableStatement(String tableName) {
+		return MilvusJsonHelper.serializeDefinition( new MilvusTruncateCollection( tableName ) );
 	}
 
 	@Override

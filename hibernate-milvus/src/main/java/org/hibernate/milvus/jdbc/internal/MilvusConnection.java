@@ -16,6 +16,7 @@ import io.milvus.v2.service.collection.request.AddFieldReq;
 import io.milvus.v2.service.collection.request.CreateCollectionReq;
 import io.milvus.v2.service.collection.request.DropCollectionReq;
 import io.milvus.v2.service.collection.request.LoadCollectionReq;
+import io.milvus.v2.service.collection.request.TruncateCollectionReq;
 import io.milvus.v2.service.index.request.CreateIndexReq;
 import io.milvus.v2.service.vector.request.AnnSearchReq;
 import io.milvus.v2.service.vector.request.DeleteReq;
@@ -50,6 +51,7 @@ import org.hibernate.milvus.jdbc.MilvusQuery;
 import org.hibernate.milvus.jdbc.MilvusRRFRanker;
 import org.hibernate.milvus.jdbc.MilvusSearch;
 import org.hibernate.milvus.jdbc.MilvusStringValue;
+import org.hibernate.milvus.jdbc.MilvusTruncateCollection;
 import org.hibernate.milvus.jdbc.MilvusTypedValue;
 import org.hibernate.milvus.jdbc.MilvusUpsert;
 import org.hibernate.milvus.jdbc.MilvusWeightedRanker;
@@ -252,6 +254,16 @@ public class MilvusConnection implements Connection {
 		client.dropCollection( builder.build() );
 	}
 
+	void truncateCollection(MilvusTruncateCollection truncateCollection) {
+		TruncateCollectionReq.TruncateCollectionReqBuilder builder = TruncateCollectionReq.builder();
+
+		if ( truncateCollection.collectionName() != null ) {
+			builder.collectionName( truncateCollection.collectionName() );
+		}
+
+		client.truncateCollection( builder.build() );
+	}
+
 	InsertResp executeInsert(MilvusInsert query, Object[] parameterValues) throws SQLException {
 		InsertReq.InsertReqBuilder builder = InsertReq.builder();
 		if ( query.getCollectionName() != null ) {
@@ -288,6 +300,52 @@ public class MilvusConnection implements Connection {
 				jsonObject.add( entry.getKey(), determineJsonValue( entry.getValue(), parameterValues ) );
 			}
 			data.add( jsonObject );
+		}
+		builder.data( data );
+
+		return client.upsert( builder.build() );
+	}
+
+	InsertResp executeBatchInsert(MilvusInsert query, ArrayList<Object[]> batchParameterValues) throws SQLException {
+		InsertReq.InsertReqBuilder builder = InsertReq.builder();
+		if ( query.getCollectionName() != null ) {
+			builder.collectionName( query.getCollectionName() );
+		}
+		if ( query.getPartitionName() != null ) {
+			builder.partitionName( query.getPartitionName() );
+		}
+		List<JsonObject> data = new ArrayList<>();
+		for ( Object[] parameterValues : batchParameterValues ) {
+			for ( Map<String, MilvusTypedValue> datum : query.getData() ) {
+				JsonObject jsonObject = new JsonObject();
+				for ( Map.Entry<String, MilvusTypedValue> entry : datum.entrySet() ) {
+					jsonObject.add( entry.getKey(), determineJsonValue( entry.getValue(), parameterValues ) );
+				}
+				data.add( jsonObject );
+			}
+		}
+		builder.data( data );
+
+		return client.insert( builder.build() );
+	}
+
+	UpsertResp executeBatchUpsert(MilvusUpsert query, ArrayList<Object[]> batchParameterValues) throws SQLException {
+		UpsertReq.UpsertReqBuilder builder = UpsertReq.builder();
+		if ( query.getCollectionName() != null ) {
+			builder.collectionName( query.getCollectionName() );
+		}
+		if ( query.getPartitionName() != null ) {
+			builder.partitionName( query.getPartitionName() );
+		}
+		List<JsonObject> data = new ArrayList<>();
+		for ( Object[] parameterValues : batchParameterValues ) {
+			for ( Map<String, MilvusTypedValue> datum : query.getData() ) {
+				JsonObject jsonObject = new JsonObject();
+				for ( Map.Entry<String, MilvusTypedValue> entry : datum.entrySet() ) {
+					jsonObject.add( entry.getKey(), determineJsonValue( entry.getValue(), parameterValues ) );
+				}
+				data.add( jsonObject );
+			}
 		}
 		builder.data( data );
 

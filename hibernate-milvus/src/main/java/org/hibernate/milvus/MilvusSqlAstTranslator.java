@@ -174,6 +174,20 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	}
 
 	@Override
+	protected void visitDeleteStatementOnly(DeleteStatement statement) {
+		renderDeleteClause( statement );
+		if ( !hasNonTrivialFromClause( statement.getFromClause() ) ) {
+			visitWhereClausePredicate( statement.getRestriction() );
+		}
+		else {
+			visitWhereClausePredicate( determineWhereClauseRestrictionWithJoinEmulation( statement ) );
+		}
+		if ( !statement.getReturningColumns().isEmpty() ) {
+			throw new UnsupportedOperationException( "Returning columns in deletes are not supported by Milvus" );
+		}
+	}
+
+	@Override
 	protected void renderDeleteClause(DeleteStatement statement) {
 		final Stack<Clause> clauseStack = getClauseStack();
 		try {
@@ -195,7 +209,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	protected void visitUpdateStatementOnly(UpdateStatement statement) {
 		renderUpdateClause( statement );
 		renderSetClause( statement.getAssignments() );
-		visitWhereClause( statement.getRestriction() );
+		visitWhereClausePredicate( statement.getRestriction() );
 		if ( !statement.getReturningColumns().isEmpty() ) {
 			throw new UnsupportedOperationException( "Returning columns in updates are not supported by Milvus" );
 		}
@@ -312,7 +326,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 			visitSelectClause( querySpec.getSelectClause() );
 			visitFromClause( querySpec.getFromClause() );
-			visitWhereClause( querySpec );
+			visitWhereClausePredicate( querySpec.getWhereClauseRestrictions() );
 			visitGroupByClause( querySpec );
 			visitOffsetFetchClause( querySpec );
 			visitForUpdateClause( querySpec );
@@ -322,13 +336,12 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 		}
 	}
 
-	protected void visitWhereClause(QuerySpec querySpec) {
+	protected void visitWhereClausePredicate(Predicate whereClauseRestrictions) {
 		assert getSqlBuffer().isEmpty();
 
-		final Predicate whereClauseRestrictions = querySpec.getWhereClauseRestrictions();
 		if ( milvusStatement instanceof MilvusUpsert upsert ) {
 			final Predicate predicate = Predicate.combinePredicates( whereClauseRestrictions, getAdditionalWherePredicate() );
-			if ( predicate == null && predicate.isEmpty() ) {
+			if ( predicate == null || predicate.isEmpty() ) {
 				throw new UnsupportedOperationException( "Milvus only supports updates by primary key" );
 			}
 			final List<Expression> idsValues = determineIdValues( predicate, true );
@@ -793,7 +806,8 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 			}
 			throw new UnsupportedOperationException( "Unsupported predicate type for by id predicate: " + predicate );
 		}
-		if ( !(lhs instanceof ColumnReference columnReference) || !isPrimaryKey( columnReference ) ){
+		final ColumnReference columnReference = lhs.getColumnReference();
+		if ( columnReference == null || !isPrimaryKey( columnReference ) ){
 			if ( required ) {
 				throw new UnsupportedOperationException(
 						"Unsupported LHS expression type for by id predicate: " + predicate );
@@ -808,20 +822,48 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	}
 
 	private boolean isPrimaryKey(ColumnReference columnReference) {
-		final QuerySpec querySpec = getCurrentQueryPart().getFirstQuerySpec();
-		final TableGroup tableGroup = querySpec.getFromClause().getRoots().get( 0 );
-		return tableGroup.findTableReference( columnReference.getQualifier() ) != null
-			&& getPrimaryKey().getSelectionExpression().equals( columnReference.getColumnExpression() );
+		final Statement statement = getStatementStack().getCurrent();
+		final SelectableMapping primaryKey;
+		if ( statement instanceof SelectStatement selectStatement ) {
+			final List<TableGroup> roots = selectStatement.getQuerySpec().getFromClause().getRoots();
+			assert roots.size() == 1;
+			primaryKey = roots.get( 0 ).findTableReference( columnReference.getQualifier() ) != null
+					? getPrimaryKey()
+					: null;
+		}
+		else if ( statement instanceof MutationStatement mutationStatement ) {
+			final String targetAlias = mutationStatement.getTargetTable().getIdentificationVariable();
+			primaryKey = targetAlias.equals( columnReference.getQualifier() )
+					? getPrimaryKey()
+					: null;
+		}
+		else {
+			throw new UnsupportedOperationException( "Unsupported statement type: " + statement );
+		}
+		return primaryKey != null && primaryKey.getSelectionExpression().equals( columnReference.getColumnExpression() );
 	}
 
 	private SelectableMapping getPrimaryKey() {
-		final QuerySpec querySpec = getCurrentQueryPart().getFirstQuerySpec();
-		final List<TableGroup> roots = querySpec.getFromClause().getRoots();
-		assert roots.size() == 1;
-		final TableGroup tableGroup = roots.get( 0 );
-		final EntityIdentifierMapping identifierMapping = tableGroup.getModelPart().asEntityMappingType().getIdentifierMapping();
-		assert identifierMapping.getJdbcTypeCount() == 1;
-		return identifierMapping.getSelectable( 0 );
+		final Statement statement = getStatementStack().getCurrent();
+		if ( statement instanceof SelectStatement selectStatement ) {
+			final List<TableGroup> roots = selectStatement.getQuerySpec().getFromClause().getRoots();
+			assert roots.size() == 1;
+			final TableGroup tableGroup = roots.get( 0 );
+			final EntityIdentifierMapping identifierMapping = tableGroup.getModelPart().asEntityMappingType()
+					.getIdentifierMapping();
+			assert identifierMapping.getJdbcTypeCount() == 1;
+			return identifierMapping.getSelectable( 0 );
+		}
+		else if ( statement instanceof MutationStatement mutationStatement ) {
+			final EntityIdentifierMapping identifierMapping = mutationStatement.getMutationTarget().getTargetPart()
+					.asEntityMappingType()
+					.getIdentifierMapping();
+			assert identifierMapping.getJdbcTypeCount() == 1;
+			return identifierMapping.getSelectable( 0 );
+		}
+		else {
+			throw new UnsupportedOperationException( "Unsupported statement type: " + statement );
+		}
 	}
 
 	protected void visitGroupByClause(QuerySpec querySpec) {
@@ -843,7 +885,8 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	@Override
 	protected void renderPartitionItem(Expression expression) {
 		final MilvusSearch milvusSearch = (MilvusSearch) milvusStatement;
-		if ( expression instanceof ColumnReference columnReference ) {
+		final ColumnReference columnReference = expression.getColumnReference();
+		if ( columnReference != null ) {
 			milvusSearch.setGroupByFieldName( columnReference.getColumnExpression() );
 		}
 		else {
@@ -925,8 +968,9 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 		getSqlBuffer().setLength( 0 );
 
 		final AbstractMilvusQuery milvusQuery = (AbstractMilvusQuery) milvusStatement;
+		final ColumnReference columnReference = expression.getColumnReference();
 		final DistanceFunctionKind distanceFunctionKind;
-		if ( expression instanceof ColumnReference columnReference ) {
+		if ( columnReference != null ) {
 //			final QuerySpec querySpec = (QuerySpec) getCurrentQueryPart();
 //			final TableGroup tableGroup = querySpec.getFromClause().getRoots().get( 0 );
 //			if ( tableGroup.findTableReference( columnReference.getQualifier() ) == null ) {
