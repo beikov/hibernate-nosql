@@ -257,6 +257,20 @@ public class MilvusTest {
 			assertEquals( 2L, results.get( 1 ).get( 0 ) );
 		} );
 	}
+
+	@Test
+	@RequiresDialect(value = MilvusDialect.class, majorVersion = 3)
+	public void testCount(SessionFactoryScope scope) {
+		scope.inTransaction( em -> {
+			final Long count = em.createSelectionQuery(
+							"select count(*) from VectorEntity e where e.theLong in :ids",
+							Long.class
+					)
+					.setParameter( "ids", List.of( 1L, 2L ) )
+					.getSingleResult();
+			assertEquals( 2L, count );
+		} );
+	}
 //
 //	@Test
 //	public void testVectorDims(SessionFactoryScope scope) {
