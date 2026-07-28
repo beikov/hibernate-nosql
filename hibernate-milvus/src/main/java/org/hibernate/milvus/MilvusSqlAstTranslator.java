@@ -120,12 +120,15 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
 public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSqlAstTranslator<T> {
 
 	public static final String DEFAULT_EMBEDDING_FIELD = "embedding";
+
+	private static final Set<String> SUPPORTED_AGGREGATE_FUNCTIONS = Set.of( "count", "sum", "avg", "min", "max" );
 	private static final String TRUE_CONSTANT = "1==1";
 
 	private MilvusStatementDefinition milvusStatement;
@@ -141,11 +144,6 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 	@Override
 	public void renderNamedSetReturningFunction(String functionName, List<? extends SqlAstNode> sqlAstArguments, AnonymousTupleTableGroupProducer tupleType, String tableIdentifierVariable, SqlAstNodeRenderingMode argumentRenderingMode) {
-		throw new UnsupportedOperationException();
-	}
-
-	@Override
-	public void render(SqlAstNode sqlAstNode, SqlAstNodeRenderingMode renderingMode) {
 		throw new UnsupportedOperationException();
 	}
 
@@ -1012,8 +1010,18 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 			}
 			addVectorSearch( distanceFunctionKind, functionExpression );
 		}
+		else if ( getDialect().getVersion().isSameOrAfter( 3 )
+				&& expression instanceof AggregateFunctionExpression functionExpression
+				&& SUPPORTED_AGGREGATE_FUNCTIONS.contains( functionExpression.getFunctionName() ) ) {
+
+			if ( milvusQuery.getOutputFields() == null ) {
+				milvusQuery.setOutputFields( new ArrayList<>() );
+			}
+			expression.accept( this );
+			milvusQuery.getOutputFields().add( getSqlBuffer().toString() );
+			getSqlBuffer().setLength( 0 );
+		}
 		else {
-			// todo (milvus): version 3.0 supports aggregate expressions count, sum, avg, min, max
 			throw new UnsupportedOperationException("Only column references are supported by Milvus in the SELECT clause");
 		}
 	}
@@ -1512,11 +1520,6 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 	@Override
 	public void visitOverflow(Overflow overflow) {
-		throw new UnsupportedOperationException();
-	}
-
-	@Override
-	public void visitStar(Star star) {
 		throw new UnsupportedOperationException();
 	}
 

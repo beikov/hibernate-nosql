@@ -83,7 +83,7 @@ import static org.hibernate.type.SqlTypes.VARCHAR;
  */
 public class MilvusDialect extends Dialect {
 
-	private static final Pattern VERSION_PATTERN = Pattern.compile( "[\\d]+\\.[\\d]+\\.[\\d]+" );
+	private static final Pattern VERSION_PATTERN = Pattern.compile( "\\d+\\.\\d+(\\.\\d+)?-.+" );
 	private static final DatabaseVersion MINIMUM_VERSION = DatabaseVersion.make( 2, 5 );
 	private static final Type[] VECTOR_JAVA_TYPES = {
 			Float[].class,
@@ -135,7 +135,11 @@ public class MilvusDialect extends Dialect {
 		DatabaseVersion databaseVersion = null;
 		final Matcher matcher = VERSION_PATTERN.matcher( versionString == null ? "" : versionString );
 		if ( matcher.matches() ) {
-			final String[] versionParts = StringHelper.split( ".", versionString );
+			final int dashPosition = versionString.indexOf( '-' );
+			final String plainVersion = dashPosition == -1
+					? versionString
+					: versionString.substring( 0, dashPosition );
+			final String[] versionParts = StringHelper.split( ".", plainVersion );
 			// if we got to this point, there is at least a major version, so no need to check [].length > 0
 			int majorVersion = parseInt( versionParts[0] );
 			int minorVersion = versionParts.length > 1 ? parseInt( versionParts[1] ) : 0;
