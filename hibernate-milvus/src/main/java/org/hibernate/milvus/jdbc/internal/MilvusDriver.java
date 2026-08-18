@@ -10,6 +10,7 @@ import io.milvus.v2.client.MilvusClientV2;
 import java.net.URI;
 import java.sql.Connection;
 import java.sql.Driver;
+import java.sql.DriverManager;
 import java.sql.DriverPropertyInfo;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
@@ -17,6 +18,21 @@ import java.util.Properties;
 import java.util.logging.Logger;
 
 public class MilvusDriver implements Driver {
+
+	private static Driver registeredDriver;
+
+	static {
+		try {
+			// moved the registerDriver from the constructor to here
+			// because some clients call the driver themselves (I know, as
+			// my early jdbc work did - and that was based on other examples).
+			// Placing it here, means that the driver is registered once only.
+			register();
+		}
+		catch (SQLException e) {
+			throw new ExceptionInInitializerError(e);
+		}
+	}
 
 	@Override
 	public Connection connect(String url, Properties info) throws SQLException {
@@ -97,5 +113,39 @@ public class MilvusDriver implements Driver {
 	@Override
 	public Logger getParentLogger() throws SQLFeatureNotSupportedException {
 		return null;
+	}
+
+	public static void register() throws SQLException {
+		if ( isRegistered() ) {
+			throw new IllegalStateException(
+					"Driver is already registered. It can only be registered once." );
+		}
+		MilvusDriver registeredDriver = new MilvusDriver();
+		DriverManager.registerDriver( registeredDriver );
+		MilvusDriver.registeredDriver = registeredDriver;
+	}
+
+	/**
+	 * According to JDBC specification, this driver is registered against {@link DriverManager} when
+	 * the class is loaded. To avoid leaks, this method allow unregistering the driver so that the
+	 * class can be gc'ed if necessary.
+	 *
+	 * @throws IllegalStateException if the driver is not registered
+	 * @throws SQLException if deregistering the driver fails
+	 */
+	public static void deregister() throws SQLException {
+		if ( registeredDriver == null ) {
+			throw new IllegalStateException(
+					"Driver is not registered (or it has not been registered using MilvusDriver.register() method)" );
+		}
+		DriverManager.deregisterDriver( registeredDriver );
+		registeredDriver = null;
+	}
+
+	/**
+	 * @return {@code true} if the driver is registered against {@link DriverManager}
+	 */
+	public static boolean isRegistered() {
+		return registeredDriver != null;
 	}
 }
