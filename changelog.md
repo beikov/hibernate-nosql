@@ -1,1 +1,2 @@
 # Hibernate NoSQL Changelog
+
