@@ -7,7 +7,7 @@
 :docsBase: https://docs.jboss.org/hibernate/nosql
 :versionDocBase: {docsBase}/{version}
 :userGuideBase: {versionDocBase}/userguide/html_single/Hibernate_User_Guide.html
-:whatsNewBase: {versionDocBase}/whats-new/whats-new.html
+:whatsNewBase: {versionDocBase}/whats-new/
 :javadocsBase: {versionDocBase}/javadocs
 :releaseSeriesBase: https://hibernate.org/nosql/releases/{version}/
 

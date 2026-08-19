@@ -11,3 +11,11 @@
 Describes the new features and capabilities added to Hibernate NoSQL in {version}.
 
 IMPORTANT: If migrating from earlier versions, be sure to also check out the link:{migrationGuide}[Migration Guide] for discussion of impactful changes.
+
+== Initial release
+
+The first release of Hibernate NoSQL includes
+
+* A basic implementation of the Jakarta NoSQL 1.0 specification
+* Connector and Dialect for Milvus to do basic querying and vector search
+* Dialect for Neo4j, using the official Neo4j JDBC driver

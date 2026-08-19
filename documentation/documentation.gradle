@@ -231,6 +231,68 @@ asciidoctorj {
 }
 
 
+
+// Getting Started Guides (quick starts) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+def gettingStartedGuideHtmlDir = layout.buildDirectory.dir( "asciidoc/quickstart/html_single" )
+
+def buildTutorialZipTask = tasks.register( 'buildTutorialZip', Zip ) { task ->
+	from 'src/main/asciidoc/quickstart/tutorials'
+	destinationDirectory.set( gettingStartedGuideHtmlDir )
+	archiveFileName = 'hibernate-tutorials.zip'
+	expand(
+			version: project.version,
+			orm: libs.hibernate.bom.get().version,
+			slf4j: libs.versions.slf4j.get(),
+			junit: libs.versions.junitJupiter.get(),
+			neo4j: libs.versions.neo4j.get()
+	)
+}
+
+def renderGettingStartedGuideHtmlTask = tasks.register( 'renderGettingStartedGuideHtmlTask', AsciidoctorTask ) { task ->
+	group = "Documentation"
+	description = 'Renders the Getting Started Guides (quickstarts) in HTML format using Asciidoctor.'
+	inputs.property "hibernate-version", hibernateVersion
+	finalizedBy buildTutorialZipTask
+
+	sourceDir = file( 'src/main/asciidoc/quickstart/guides' )
+	sources 'index.adoc'
+
+	outputDir = gettingStartedGuideHtmlDir
+
+	attributes jpaJavadocUrlPrefix: "https://javaee.github.io/javaee-spec/javadocs/javax/persistence/"
+
+	resources {
+		from(project.layout.buildDirectory.dir("unpacked-theme").get()
+				.dir("hibernate-asciidoctor-theme").dir("asciidoc")) {
+			include 'css/**'
+			include 'images/**'
+			include 'script/**'
+		}
+	}
+}
+
+def renderGettingStartedGuidePdfTask = tasks.register( 'renderGettingStartedGuidePdf', AsciidoctorPdfTask ) { task ->
+	group = "Documentation"
+	description = 'Renders the Getting Started Guides in PDF format using Asciidoctor.'
+	inputs.property "hibernate-version", hibernateVersion
+
+	baseDir = file( 'src/main/asciidoc/quickstart/guides' )
+
+	sourceDir = file( 'src/main/asciidoc/quickstart/guides' )
+	sources 'index.adoc'
+
+	outputDir = layout.buildDirectory.dir( "asciidoc/quickstart/pdf" )
+
+	attributes jpaJavadocUrlPrefix: "https://javaee.github.io/javaee-spec/javadocs/javax/persistence/"
+}
+
+def renderGettingStartedGuidesTask = tasks.register( 'renderGettingStartedGuides' ) { task ->
+	task.group = "Documentation"
+	task.description = 'Renders the Getting Started Guide in all formats, as well as the accompanying tutorial zip.'
+	task.dependsOn renderGettingStartedGuideHtmlTask, renderGettingStartedGuidePdfTask, buildTutorialZipTask
+}
+
 // User Guide ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 settingsDocumentation {
