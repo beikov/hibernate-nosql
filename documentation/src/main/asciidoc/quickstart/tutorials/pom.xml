@@ -25,9 +25,15 @@
 
     <dependencies>
         <dependency>
-            <groupId>org.hibernate</groupId>
-            <artifactId>hibernate-core</artifactId>
+            <groupId>org.hibernate.nosql</groupId>
+            <artifactId>hibernate-neo4j</artifactId>
             <version>$version</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.hibernate.orm</groupId>
+            <artifactId>hibernate-core</artifactId>
+            <version>$orm</version>
         </dependency>
 
         <!-- Hibernate uses jboss-logging for logging, for the tutorials we will use the sl4fj-simple backend -->
@@ -39,16 +45,16 @@
 
         <!-- The tutorials use JUnit test cases to illustrate usage -->
         <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
             <version>$junit</version>
         </dependency>
 
-        <!-- The tutorials use the H2 in-memory database -->
+        <!-- The tutorials use the Neo4j database -->
         <dependency>
-            <groupId>com.h2database</groupId>
-            <artifactId>h2</artifactId>
-            <version>$h2</version>
+            <groupId>org.neo4j</groupId>
+            <artifactId>neo4j-jdbc-full-bundle</artifactId>
+            <version>$neo4j</version>
         </dependency>
     </dependencies>
 

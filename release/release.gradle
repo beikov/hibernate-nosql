@@ -36,6 +36,16 @@ def releasePrepareTask = tasks.register("releasePrepare") {
 // Assemble documentation as part of Release Prepare
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+def stageQuickstartTask = tasks.register( "stageQuickstart", Copy ) {
+    group = 'documentation'
+    description = "Stages the Getting Started Guide as part of assembling documentation in preparation for release"
+
+    dependsOn ':documentation:renderGettingStartedGuides'
+
+    from project.provider { project( ":documentation" ).layout.buildDirectory.dir( "asciidoc/quickstart" ) }
+    into rootProject.layout.buildDirectory.dir("staging-deploy/documentation/quickstart")
+}
+
 def stageUserGuideTask = tasks.register( "stageUserGuide", Copy ) {
     group = 'documentation'
     description = "Stages the User Guide as part of assembling documentation in preparation for release"
@@ -77,6 +87,58 @@ def stageWhatsNewGuideTask = tasks.register( "stageWhatsNewGuide", Copy ) {
     into rootProject.layout.buildDirectory.dir("staging-deploy/documentation/whats-new")
 }
 
+def stageIncubationReportTask = tasks.register( "stageIncubationReport", Copy ) { task ->
+    group = 'documentation'
+    description = "Stages ORM @Incubating report as part of assembling documentation in preparation for release"
+
+    dependsOn ':documentation:generateIncubationReport'
+    tasks.stageOrmReports.dependsOn task
+
+    from project( ":documentation" ).tasks.generateIncubationReport
+    into rootProject.layout.buildDirectory.dir("staging-deploy/documentation/incubating")
+}
+
+def stageInternalsReportTask = tasks.register( "stageInternalsReport", Copy ) { task ->
+    group = 'documentation'
+    description = "Stages the @Internal report as part of assembling documentation in preparation for release"
+
+    dependsOn ':documentation:generateInternalsReport'
+
+    from project( ":documentation" ).tasks.generateInternalsReport
+    into rootProject.layout.buildDirectory.dir("staging-deploy/documentation/internals")
+}
+
+def stageDeprecationReportTask = tasks.register( "stageDeprecationReport", Copy ) {
+    group = 'documentation'
+    description = "Stages the @Deprecated/@Remove report as part of assembling documentation in preparation for release"
+
+    dependsOn ':documentation:generateDeprecationReport'
+
+    from project( ":documentation" ).tasks.generateDeprecationReport
+    into rootProject.layout.buildDirectory.dir("staging-deploy/documentation/deprecated")
+}
+
+def stageLoggingReportTask = tasks.register( "stageLoggingReport", Copy ) { task ->
+    group = 'documentation'
+    description = "Stages the logging report as part of assembling documentation in preparation for release"
+
+    dependsOn ':documentation:renderLoggingReport'
+
+    from project( ":documentation" ).tasks.renderLoggingReport
+    into rootProject.layout.buildDirectory.dir("staging-deploy/documentation/logging")
+}
+
+def stageOrmReportsTask = tasks.register( "stageOrmReports" ) {
+    group = 'documentation'
+    description = "Stages all ORM reports as part of assembling documentation in preparation for release"
+
+    dependsOn ':documentation:generateReports'
+    dependsOn stageIncubationReportTask
+    dependsOn stageInternalsReportTask
+    dependsOn stageDeprecationReportTask
+    dependsOn stageLoggingReportTask
+}
+
 def stageJavadocsTask = tasks.register( "stageJavadocs", Copy ) {
     group = 'documentation'
     description = "Stages the aggregated Javadocs as part of assembling documentation in preparation for release"
@@ -98,8 +160,10 @@ def assembleDocumentationTask = tasks.register( "assembleDocumentation" ) {
 
     dependsOn ':documentation:buildDocsForPublishing'
     dependsOn stageJavadocsTask
+    dependsOn stageQuickstartTask
     dependsOn stageUserGuideTask
     dependsOn stageMigrationGuideTask
     dependsOn stageDialectGuideTask
     dependsOn stageWhatsNewGuideTask
+    dependsOn stageOrmReportsTask
 }
