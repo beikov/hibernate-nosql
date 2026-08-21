@@ -1,0 +1,22 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * Copyright Red Hat Inc. and Hibernate Authors
+ */
+
+plugins {
+    id "local.java-module"
+}
+
+description = 'Tests for common vector search HQL operations'
+
+dependencies {
+    testImplementation project( ':hibernate-milvus' )
+    testImplementation project( ':hibernate-neo4j' )
+    testImplementation project( ':hibernate-nosql-testing' )
+    testImplementation libs.hibernate.testing
+    testImplementation libs.hibernate.vector
+}
+
+test {
+    include '**/**'
+}

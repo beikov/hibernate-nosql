@@ -4,31 +4,31 @@
  */
 package org.hibernate.milvus;
 
+import io.milvus.common.utils.Float16Utils;
+import io.milvus.v2.service.vector.request.data.Float16Vec;
 import org.hibernate.type.descriptor.ValueBinder;
 import org.hibernate.type.descriptor.ValueExtractor;
 import org.hibernate.type.descriptor.WrapperOptions;
-import org.hibernate.type.descriptor.java.BasicPluralJavaType;
-import org.hibernate.type.descriptor.java.ByteJavaType;
 import org.hibernate.type.descriptor.java.JavaType;
-import org.hibernate.type.descriptor.java.PrimitiveByteArrayJavaType;
 import org.hibernate.type.descriptor.jdbc.ArrayJdbcType;
 import org.hibernate.type.descriptor.jdbc.BasicBinder;
 import org.hibernate.type.descriptor.jdbc.BasicExtractor;
-import org.hibernate.type.descriptor.jdbc.JdbcLiteralFormatter;
 import org.hibernate.type.descriptor.jdbc.JdbcType;
-import org.hibernate.type.descriptor.jdbc.internal.JdbcLiteralFormatterArray;
 import org.hibernate.type.spi.TypeConfiguration;
 
+import java.nio.ByteBuffer;
 import java.sql.CallableStatement;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
 
-public class MilvusBinaryVectorJdbcType extends ArrayJdbcType {
+public class MilvusFloat16VectorJdbcType extends ArrayJdbcType {
 
 	private final int sqlType;
 
-	public MilvusBinaryVectorJdbcType(JdbcType elementJdbcType, int sqlType) {
+	public MilvusFloat16VectorJdbcType(JdbcType elementJdbcType, int sqlType) {
 		super( elementJdbcType );
 		this.sqlType = sqlType;
 	}
@@ -40,7 +40,7 @@ public class MilvusBinaryVectorJdbcType extends ArrayJdbcType {
 
 	@Override
 	public JavaType<?> getRecommendedJavaType(Integer precision, Integer scale, TypeConfiguration typeConfiguration) {
-		return typeConfiguration.getJavaTypeRegistry().resolveDescriptor( byte[].class );
+		return typeConfiguration.getJavaTypeRegistry().resolveDescriptor( float[].class );
 	}
 
 	@Override
@@ -49,28 +49,7 @@ public class MilvusBinaryVectorJdbcType extends ArrayJdbcType {
 			Integer precision,
 			Integer scale,
 			TypeConfiguration typeConfiguration) {
-		return (JavaType<T>) typeConfiguration.getJavaTypeRegistry().resolveDescriptor( byte[].class );
-	}
-
-	@Override
-	public <T> JdbcLiteralFormatter<T> getJdbcLiteralFormatter(JavaType<T> javaTypeDescriptor) {
-		final JavaType<T> elementJavaType;
-		if ( javaTypeDescriptor instanceof PrimitiveByteArrayJavaType ) {
-			// Special handling needed for Byte[], because that would conflict with the VARBINARY mapping
-			//noinspection unchecked
-			elementJavaType = (JavaType<T>) ByteJavaType.INSTANCE;
-		}
-		else if ( javaTypeDescriptor instanceof BasicPluralJavaType ) {
-			//noinspection unchecked
-			elementJavaType = ( (BasicPluralJavaType<T>) javaTypeDescriptor ).getElementJavaType();
-		}
-		else {
-			throw new IllegalArgumentException( "not a BasicPluralJavaType" );
-		}
-		return new JdbcLiteralFormatterArray<>(
-				javaTypeDescriptor,
-				getElementJdbcType().getJdbcLiteralFormatter( elementJavaType )
-		);
+		return (JavaType<T>) typeConfiguration.getJavaTypeRegistry().resolveDescriptor( float[].class );
 	}
 
 	@Override
@@ -78,17 +57,25 @@ public class MilvusBinaryVectorJdbcType extends ArrayJdbcType {
 		return new BasicExtractor<>( javaTypeDescriptor, this ) {
 			@Override
 			protected X doExtract(ResultSet rs, int paramIndex, WrapperOptions options) throws SQLException {
-				return javaTypeDescriptor.wrap( rs.getObject( paramIndex, byte[].class ), options );
+				return getValue( rs.getObject( paramIndex, Float16Vec.class ), options );
 			}
 
 			@Override
 			protected X doExtract(CallableStatement statement, int index, WrapperOptions options) throws SQLException {
-				return javaTypeDescriptor.wrap( statement.getObject( index, byte[].class ), options );
+				return getValue( statement.getObject( index, Float16Vec.class ), options );
 			}
 
 			@Override
 			protected X doExtract(CallableStatement statement, String name, WrapperOptions options) throws SQLException {
-				return javaTypeDescriptor.wrap( statement.getObject( name, byte[].class ), options );
+				return getValue( statement.getObject( name, Float16Vec.class ), options );
+			}
+
+			private X getValue(Float16Vec vector, WrapperOptions options) {
+				if ( vector == null ) {
+					return null;
+				}
+
+				return getJavaType().wrap( Float16Utils.fp16BufferToVector( (ByteBuffer) vector.getData() ), options );
 			}
 
 		};
@@ -100,18 +87,26 @@ public class MilvusBinaryVectorJdbcType extends ArrayJdbcType {
 
 			@Override
 			protected void doBind(PreparedStatement st, X value, int index, WrapperOptions options) throws SQLException {
-				st.setObject( index, value );
+				st.setObject( index, getBindValue( value, options ) );
 			}
 
 			@Override
 			protected void doBind(CallableStatement st, X value, String name, WrapperOptions options)
 					throws SQLException {
-				st.setObject( name, value, java.sql.Types.ARRAY );
+				st.setObject( name, getBindValue( value, options ), java.sql.Types.ARRAY );
 			}
 
 			@Override
 			public Object getBindValue(X value, WrapperOptions options) {
-				return value;
+				if ( value == null ) {
+					return null;
+				}
+				final float[] floats = getJavaType().unwrap( value, float[].class, options );
+				final List<Float> floatList = new ArrayList<>( floats.length );
+				for ( float f : floats ) {
+					floatList.add( f );
+				}
+				return new Float16Vec( floatList );
 			}
 		};
 	}

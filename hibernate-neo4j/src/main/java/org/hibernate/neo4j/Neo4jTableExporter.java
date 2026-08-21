@@ -116,6 +116,8 @@ public class Neo4jTableExporter implements Exporter<Table> {
 			}
 		}
 
+		statements.add( context.getDialect().getTruncateTableStatement( table.getQualifiedName( context ) ) );
+
 		return statements.toArray( new String[0] );
 	}
 }

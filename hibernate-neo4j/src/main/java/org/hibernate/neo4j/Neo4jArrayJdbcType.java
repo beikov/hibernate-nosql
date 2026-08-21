@@ -42,10 +42,10 @@ public class Neo4jArrayJdbcType extends ArrayJdbcType {
 			&& getElementJdbcType() instanceof AggregateJdbcType aggregateJdbcType
 			&& aggregateJdbcType.getEmbeddableMappingType() != null
 				? super.getArray( extractor, array, options )
-				: javaType.wrap( toJavaArray( array ), options );
+				: javaType.wrap( toJavaArray( array, javaType.getJavaTypeClass() ), options );
 	}
 
-	private static Object toJavaArray(@Nullable java.sql.Array array) throws SQLException {
+	private static Object toJavaArray(@Nullable java.sql.Array array, Class<?> expectedArrayType) throws SQLException {
 		// The Neo4j driver seems to produce a long[] for integral arrays, regardless of the type of the written value,
 		// so we try to do some coercion in here
 		if ( array == null ) {
@@ -53,17 +53,39 @@ public class Neo4jArrayJdbcType extends ArrayJdbcType {
 		}
 		final Object javaArray = array.getArray();
 		if ( javaArray instanceof long[] longs ) {
-			final Object[] objects = new Object[longs.length];
-			for ( int i = 0; i < longs.length; i++ ) {
-				objects[i] = longs[i];
+			if ( expectedArrayType == byte[].class ) {
+				final byte[] bytes = new byte[longs.length];
+				for ( int i = 0; i < longs.length; i++ ) {
+					bytes[i] = (byte) longs[i];
+				}
+				return bytes;
 			}
-			return objects;
+			else if ( expectedArrayType == short[].class ) {
+				final short[] shorts = new short[longs.length];
+				for ( int i = 0; i < longs.length; i++ ) {
+					shorts[i] = (short) longs[i];
+				}
+				return shorts;
+			}
+			else if ( expectedArrayType == int[].class ) {
+				final int[] ints = new int[longs.length];
+				for ( int i = 0; i < longs.length; i++ ) {
+					ints[i] = (int) longs[i];
+				}
+				return ints;
+			}
+			else {
+				final Object[] objects = new Object[longs.length];
+				for ( int i = 0; i < longs.length; i++ ) {
+					objects[i] = longs[i];
+				}
+				return objects;
+			}
 		}
 		else {
 			return javaArray;
 		}
 	}
-
 
 	public static class Neo4jArrayJdbcTypeConstructor implements JdbcTypeConstructor {
 		public static final Neo4jArrayJdbcTypeConstructor INSTANCE = new Neo4jArrayJdbcTypeConstructor();

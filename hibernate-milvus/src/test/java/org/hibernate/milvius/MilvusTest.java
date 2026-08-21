@@ -19,6 +19,7 @@ import org.hibernate.milvus.MilvusNativeQueryInterpreter;
 import org.hibernate.milvus.jdbc.MilvusJsonHelper;
 import org.hibernate.milvus.jdbc.MilvusNumberValue;
 import org.hibernate.milvus.jdbc.MilvusQuery;
+import org.hibernate.nosql.testing.EventualConsistentTestHelper;
 import org.hibernate.testing.orm.junit.DomainModel;
 import org.hibernate.testing.orm.junit.RequiresDialect;
 import org.hibernate.testing.orm.junit.ServiceRegistry;
@@ -34,12 +35,13 @@ import org.junit.jupiter.api.Test;
 import java.util.Comparator;
 import java.util.List;
 
+import static org.hibernate.nosql.testing.VectorTestHelper.cosineDistance;
+import static org.hibernate.nosql.testing.VectorTestHelper.euclideanDistance;
+import static org.hibernate.nosql.testing.VectorTestHelper.euclideanSquaredDistance;
+import static org.hibernate.nosql.testing.VectorTestHelper.innerProduct;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-/**
- * @author Christian Beikov
- */
 @DomainModel(annotatedClasses = MilvusTest.VectorEntity.class)
 @SessionFactory
 @ServiceRegistry(
@@ -55,22 +57,15 @@ public class MilvusTest {
 
 	private static final float[] V1 = new float[]{ 1, 2, 3 };
 	private static final float[] V2 = new float[]{ 4, 5, 6 };
-	private static final byte[] BV1 = new byte[]{ 1, 2, 3 };
-	private static final byte[] BV2 = new byte[]{ 4, 5, 6 };
 
 	@BeforeEach
 	public void prepareData(SessionFactoryScope scope) {
 		scope.inTransaction( em -> {
-			em.persist( new VectorEntity( 1L, V1, BV1 ) );
-			em.persist( new VectorEntity( 2L, V2, BV2 ) );
+			em.persist( new VectorEntity( 1L, V1 ) );
+			em.persist( new VectorEntity( 2L, V2 ) );
 		} );
-		// Wait a bit, since Milvus need some time until committed changes are visible
-		try {
-			Thread.sleep( 1000 );
-		}
-		catch (InterruptedException e) {
-			throw new RuntimeException( e );
-		}
+		EventualConsistentTestHelper.awaitExisting( scope, VectorEntity.class, 1L );
+		EventualConsistentTestHelper.awaitExisting( scope, VectorEntity.class, 2L );
 	}
 
 	@AfterEach
@@ -125,12 +120,10 @@ public class MilvusTest {
 	@Test
 	public void testEuclideanDistance(SessionFactoryScope scope) {
 		scope.inTransaction( em -> {
-			//tag::euclidean-distance-example[]
 			final float[] vector = new float[]{ 1, 1, 1 };
 			final List<Tuple> results = em.createSelectionQuery( "select e.id, euclidean_distance(e.theL2Vector, :vec) from VectorEntity e", Tuple.class )
 					.setParameter( "vec", vector )
 					.getResultList();
-			//end::euclidean-distance-example[]
 			results.sort( Comparator.comparingLong( o -> o.get( 0, Long.class ) ) );
 			assertEquals( 2, results.size() );
 			assertEquals( 1L, results.get( 0 ).get( 0 ) );
@@ -143,12 +136,10 @@ public class MilvusTest {
 	@Test
 	public void testEuclideanSquaredDistance(SessionFactoryScope scope) {
 		scope.inTransaction( em -> {
-			//tag::euclidean-distance-example[]
 			final float[] vector = new float[]{ 1, 1, 1 };
 			final List<Tuple> results = em.createSelectionQuery( "select e.id, euclidean_squared_distance(e.theL2Vector, :vec) from VectorEntity e", Tuple.class )
 					.setParameter( "vec", vector )
 					.getResultList();
-			//end::euclidean-distance-example[]
 			results.sort( Comparator.comparingLong( o -> o.get( 0, Long.class ) ) );
 			assertEquals( 2, results.size() );
 			assertEquals( 1L, results.get( 0 ).get( 0 ) );
@@ -157,24 +148,6 @@ public class MilvusTest {
 			assertEquals( euclideanSquaredDistance( V2, vector ), results.get( 1 ).get( 1, Double.class ), 0D );
 		} );
 	}
-//
-//	@Test
-//	public void testTaxicabDistance(SessionFactoryScope scope) {
-//		scope.inTransaction( em -> {
-//			//tag::taxicab-distance-example[]
-//			final float[] vector = new float[]{ 1, 1, 1 };
-//			final List<Tuple> results = em.createSelectionQuery( "select e.id, taxicab_distance(e.theL1Vector, :vec) from VectorEntity e", Tuple.class )
-//					.setParameter( "vec", vector )
-//					.getResultList();
-//			//end::taxicab-distance-example[]
-//			results.sort( Comparator.comparingLong( o -> o.get( 0, Long.class ) ) );
-//			assertEquals( 2, results.size() );
-//			assertEquals( 1L, results.get( 0 ).get( 0 ) );
-//			assertEquals( taxicabDistance( V1, vector ), results.get( 0 ).get( 1, Double.class ), 0D );
-//			assertEquals( 2L, results.get( 1 ).get( 0 ) );
-//			assertEquals( taxicabDistance( V2, vector ), results.get( 1 ).get( 1, Double.class ), 0D );
-//		} );
-//	}
 
 	@Test
 	public void testInnerProduct(SessionFactoryScope scope) {
@@ -211,38 +184,6 @@ public class MilvusTest {
 	}
 
 	@Test
-	public void testHammingDistance(SessionFactoryScope scope) {
-		scope.inTransaction( em -> {
-			final byte[] vector = new byte[]{ 1, 1, 1 };
-			final List<Tuple> results = em.createSelectionQuery( "select e.id, hamming_distance(e.theHammingVector, :vec) from VectorEntity e", Tuple.class )
-					.setParameter( "vec", vector )
-					.getResultList();
-			results.sort( Comparator.comparingLong( o -> o.get( 0, Long.class ) ) );
-			assertEquals( 2, results.size() );
-			assertEquals( 1L, results.get( 0 ).get( 0 ) );
-			assertEquals( hammingDistance( BV1, vector ), results.get( 0 ).get( 1, Double.class ), 0D );
-			assertEquals( 2L, results.get( 1 ).get( 0 ) );
-			assertEquals( hammingDistance( BV2, vector ), results.get( 1 ).get( 1, Double.class ), 0D );
-		} );
-	}
-
-	@Test
-	public void testJaccardDistance(SessionFactoryScope scope) {
-		scope.inTransaction( em -> {
-			final byte[] vector = new byte[]{ 1, 1, 1 };
-			final List<Tuple> results = em.createSelectionQuery( "select e.id, jaccard_distance(e.theJaccardVector, :vec) from VectorEntity e", Tuple.class )
-					.setParameter( "vec", vector )
-					.getResultList();
-			results.sort( Comparator.comparingLong( o -> o.get( 0, Long.class ) ) );
-			assertEquals( 2, results.size() );
-			assertEquals( 1L, results.get( 0 ).get( 0 ) );
-			assertEquals( jaccardDistance( BV1, vector ), results.get( 0 ).get( 1, Double.class ), 0.0000001D );
-			assertEquals( 2L, results.get( 1 ).get( 0 ) );
-			assertEquals( jaccardDistance( BV2, vector ), results.get( 1 ).get( 1, Double.class ), 0.0000001D );
-		} );
-	}
-
-	@Test
 	public void testInListPredicateTransformation(SessionFactoryScope scope) {
 		scope.inTransaction( em -> {
 			final List<Tuple> results = em.createSelectionQuery(
@@ -271,117 +212,12 @@ public class MilvusTest {
 			assertEquals( 2L, count );
 		} );
 	}
-//
-//	@Test
-//	public void testVectorDims(SessionFactoryScope scope) {
-//		scope.inTransaction( em -> {
-//			//tag::vector-dims-example[]
-//			final List<Tuple> results = em.createSelectionQuery( "select e.id, vector_dims(e.theVector) from VectorEntity e", Tuple.class )
-//					.getResultList();
-//			//end::vector-dims-example[]
-//			results.sort( Comparator.comparingLong( o -> o.get( 0, Long.class ) ) );
-//			assertEquals( 2, results.size() );
-//			assertEquals( 1L, results.get( 0 ).get( 0 ) );
-//			assertEquals( V1.length, results.get( 0 ).get( 1 ) );
-//			assertEquals( 2L, results.get( 1 ).get( 0 ) );
-//			assertEquals( V2.length, results.get( 1 ).get( 1 ) );
-//		} );
-//	}
-//
-//	@Test
-//	public void testVectorNorm(SessionFactoryScope scope) {
-//		scope.inTransaction( em -> {
-//			//tag::vector-norm-example[]
-//			final List<Tuple> results = em.createSelectionQuery( "select e.id, vector_norm(e.theVector) from VectorEntity e", Tuple.class )
-//					.getResultList();
-//			//end::vector-norm-example[]
-//			results.sort( Comparator.comparingLong( o -> o.get( 0, Long.class ) ) );
-//			assertEquals( 2, results.size() );
-//			assertEquals( 1L, results.get( 0 ).get( 0 ) );
-//			assertEquals( euclideanNorm( V1 ), results.get( 0 ).get( 1, Double.class ), 0D );
-//			assertEquals( 2L, results.get( 1 ).get( 0 ) );
-//			assertEquals( euclideanNorm( V2 ), results.get( 1 ).get( 1, Double.class ), 0D );
-//		} );
-//	}
-
-	private static double cosineDistance(float[] f1, float[] f2) {
-		return 1D - innerProduct( f1, f2 ) / ( euclideanNorm( f1 ) * euclideanNorm( f2 ) );
-	}
-
-	private static double hammingDistance(byte[] f1, byte[] f2) {
-		assert f1.length == f2.length;
-		long distance = 0L;
-		for ( int i = 0; i < f1.length; i++ ) {
-			distance += Integer.bitCount( f1[i] ^ f2[i] );
-		}
-		return distance;
-	}
-
-	public static double jaccardDistance(byte[] f1, byte[] f2) {
-		assert f1.length == f2.length;
-		int intersectionSum = 0;
-		int unionSum = 0;
-		for (int i = 0; i < f1.length; i++) {
-			intersectionSum += Integer.bitCount( f1[i] & f2[i] );
-			unionSum += Integer.bitCount( f1[i] | f2[i] );
-		}
-		return 1d - (double) intersectionSum / unionSum;
-	}
-
-	private static double euclideanDistance(float[] f1, float[] f2) {
-		assert f1.length == f2.length;
-		double result = 0;
-		for ( int i = 0; i < f1.length; i++ ) {
-			result += Math.pow( (double) f1[i] - f2[i], 2 );
-		}
-		return Math.sqrt( result );
-	}
-
-	public static double euclideanSquaredDistance(float[] f1, float[] f2) {
-		assert f1.length == f2.length;
-		double result = 0;
-		for ( int i = 0; i < f1.length; i++ ) {
-			result += Math.pow( (double) f1[i] - f2[i], 2 );
-		}
-		return result;
-	}
-
-	private static double taxicabDistance(float[] f1, float[] f2) {
-		return norm( f1 ) - norm( f2 );
-	}
-
-	private static double innerProduct(float[] f1, float[] f2) {
-		assert f1.length == f2.length;
-		double result = 0;
-		for ( int i = 0; i < f1.length; i++ ) {
-			result += ( (double) f1[i] ) * ( (double) f2[i] );
-		}
-		return result;
-	}
-
-	private static double euclideanNorm(float[] f) {
-		double result = 0;
-		for ( float v : f ) {
-			result += Math.pow( v, 2 );
-		}
-		return Math.sqrt( result );
-	}
-
-	private static double norm(float[] f) {
-		double result = 0;
-		for ( float v : f ) {
-			result += Math.abs( v );
-		}
-		return result;
-	}
 
 	@Entity( name = "VectorEntity" )
 	@Table(indexes = {
 			@Index( name = "VectorEntity_ip", columnList = "the_ip_vector", options = "metric=ip"),
 			@Index( name = "VectorEntity_cosine", columnList = "the_cosine_vector", options = "metric=cosine"),
-			@Index( name = "VectorEntity_l2", columnList = "the_l2_vector", options = "metric=l2"),
-			@Index( name = "VectorEntity_hamming", columnList = "the_hamming_vector", options = "metric=hamming"),
-			@Index( name = "VectorEntity_jaccard", columnList = "the_jaccard_vector", options = "metric=jaccard")
+			@Index( name = "VectorEntity_l2", columnList = "the_l2_vector", options = "metric=l2")
 	})
 	public static class VectorEntity {
 
@@ -406,19 +242,11 @@ public class MilvusTest {
 		@JdbcTypeCode(SqlTypes.VECTOR)
 		@Array(length = 3)
 		private float[] theL2Vector;
-		@Column( name = "the_hamming_vector", nullable = false )
-		@JdbcTypeCode(SqlTypes.VECTOR_INT8)
-		@Array(length = 3)
-		private byte[] theHammingVector;
-		@Column( name = "the_jaccard_vector", nullable = false )
-		@JdbcTypeCode(SqlTypes.VECTOR_INT8)
-		@Array(length = 3)
-		private byte[] theJaccardVector;
 
 		public VectorEntity() {
 		}
 
-		public VectorEntity(Long id, float[] theVector, byte[] theBinaryVector) {
+		public VectorEntity(Long id, float[] theVector) {
 			this.id = id;
 			this.theByte = id.byteValue();
 			this.theShort = id.shortValue();
@@ -428,8 +256,6 @@ public class MilvusTest {
 			this.theIpVector = theVector;
 			this.theCosineVector = theVector;
 			this.theL2Vector = theVector;
-			this.theHammingVector = theBinaryVector;
-			this.theJaccardVector = theBinaryVector;
 		}
 
 		public Long getId() {
@@ -446,14 +272,6 @@ public class MilvusTest {
 
 		public void setTheVector(float[] theVector) {
 			this.theIpVector = theVector;
-		}
-
-		public byte[] getTheBinaryVector() {
-			return theHammingVector;
-		}
-
-		public void setTheBinaryVector(byte[] theBinaryVector) {
-			this.theHammingVector = theBinaryVector;
 		}
 	}
 }

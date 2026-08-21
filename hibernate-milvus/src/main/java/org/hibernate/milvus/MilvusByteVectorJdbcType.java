@@ -4,6 +4,7 @@
  */
 package org.hibernate.milvus;
 
+import io.milvus.v2.service.vector.request.data.Int8Vec;
 import org.hibernate.type.descriptor.ValueBinder;
 import org.hibernate.type.descriptor.ValueExtractor;
 import org.hibernate.type.descriptor.WrapperOptions;
@@ -19,16 +20,17 @@ import org.hibernate.type.descriptor.jdbc.JdbcType;
 import org.hibernate.type.descriptor.jdbc.internal.JdbcLiteralFormatterArray;
 import org.hibernate.type.spi.TypeConfiguration;
 
+import java.nio.ByteBuffer;
 import java.sql.CallableStatement;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-public class MilvusBinaryVectorJdbcType extends ArrayJdbcType {
+public class MilvusByteVectorJdbcType extends ArrayJdbcType {
 
 	private final int sqlType;
 
-	public MilvusBinaryVectorJdbcType(JdbcType elementJdbcType, int sqlType) {
+	public MilvusByteVectorJdbcType(JdbcType elementJdbcType, int sqlType) {
 		super( elementJdbcType );
 		this.sqlType = sqlType;
 	}
@@ -78,17 +80,24 @@ public class MilvusBinaryVectorJdbcType extends ArrayJdbcType {
 		return new BasicExtractor<>( javaTypeDescriptor, this ) {
 			@Override
 			protected X doExtract(ResultSet rs, int paramIndex, WrapperOptions options) throws SQLException {
-				return javaTypeDescriptor.wrap( rs.getObject( paramIndex, byte[].class ), options );
+				return getValue( rs.getObject( paramIndex, Int8Vec.class ), options );
 			}
 
 			@Override
 			protected X doExtract(CallableStatement statement, int index, WrapperOptions options) throws SQLException {
-				return javaTypeDescriptor.wrap( statement.getObject( index, byte[].class ), options );
+				return getValue( statement.getObject( index, Int8Vec.class ), options );
 			}
 
 			@Override
 			protected X doExtract(CallableStatement statement, String name, WrapperOptions options) throws SQLException {
-				return javaTypeDescriptor.wrap( statement.getObject( name, byte[].class ), options );
+				return getValue( statement.getObject( name, Int8Vec.class ), options );
+			}
+
+			private X getValue(Int8Vec vector, WrapperOptions options) {
+				if ( vector == null ) {
+					return null;
+				}
+				return getJavaType().wrap( ((ByteBuffer) vector.getData()).array(), options );
 			}
 
 		};
@@ -100,18 +109,22 @@ public class MilvusBinaryVectorJdbcType extends ArrayJdbcType {
 
 			@Override
 			protected void doBind(PreparedStatement st, X value, int index, WrapperOptions options) throws SQLException {
-				st.setObject( index, value );
+				st.setObject( index, getBindValue( value, options ) );
 			}
 
 			@Override
 			protected void doBind(CallableStatement st, X value, String name, WrapperOptions options)
 					throws SQLException {
-				st.setObject( name, value, java.sql.Types.ARRAY );
+				st.setObject( name, getBindValue( value, options ), java.sql.Types.ARRAY );
 			}
 
 			@Override
 			public Object getBindValue(X value, WrapperOptions options) {
-				return value;
+				if ( value == null ) {
+					return null;
+				}
+				final byte[] bytes = getJavaType().unwrap( value, byte[].class, options );
+				return new Int8Vec( bytes );
 			}
 		};
 	}

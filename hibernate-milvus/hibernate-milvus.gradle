@@ -21,6 +21,7 @@ dependencies {
         implementation libs.jdbc.milvus26
     }
 
+    testImplementation project( ':hibernate-nosql-testing' )
     testImplementation libs.hibernate.testing
 //    testImplementation project( path: ':hibernate-core', configuration: 'tests' )
 }
