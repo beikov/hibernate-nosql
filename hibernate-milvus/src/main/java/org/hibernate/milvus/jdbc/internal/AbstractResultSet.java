@@ -6,6 +6,10 @@ package org.hibernate.milvus.jdbc.internal;
 
 import com.google.gson.JsonNull;
 import com.google.gson.JsonPrimitive;
+import io.milvus.v2.service.vector.request.data.BinaryVec;
+import io.milvus.v2.service.vector.request.data.Float16Vec;
+import io.milvus.v2.service.vector.request.data.Int8Vec;
+import io.milvus.v2.service.vector.request.data.SparseFloatVec;
 import jakarta.annotation.Nullable;
 import org.hibernate.internal.build.AllowReflection;
 
@@ -46,6 +50,7 @@ import java.time.ZonedDateTime;
 import java.util.Calendar;
 import java.util.List;
 import java.util.Map;
+import java.util.SortedMap;
 
 public abstract class AbstractResultSet<T extends Statement> implements ResultSet {
 
@@ -891,8 +896,20 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 		else if ( type.isInstance( value  ) ) {
 			return type.cast( value );
 		}
-		else if ( type == byte[].class && value instanceof ByteBuffer byteBuffer ) {
-			return (T) byteBuffer.array();
+		else if ( value instanceof ByteBuffer byteBuffer ) {
+			if ( type == byte[].class ) {
+				return (T) byteBuffer.array();
+			}
+			else if ( type == BinaryVec.class ) {
+				return type.cast( new BinaryVec( byteBuffer ) );
+			}
+			else if ( type == Int8Vec.class ) {
+				return type.cast( new Int8Vec( byteBuffer ) );
+			}
+			else if ( type == Float16Vec.class ) {
+				return type.cast( new Float16Vec( byteBuffer ) );
+			}
+			// Fall-through
 		}
 		else if ( type.isArray() && value instanceof List<?> list ) {
 			final Object array = java.lang.reflect.Array.newInstance( type.componentType(), list.size() );
@@ -900,6 +917,10 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 				java.lang.reflect.Array.set( array, i, list.get( i ) );
 			}
 			return type.cast( array );
+		}
+		else if ( type == SparseFloatVec.class && value instanceof SortedMap<?, ?> sparseFloats ) {
+			//noinspection unchecked
+			return type.cast( new SparseFloatVec( (SortedMap<Long, Float>) sparseFloats ) );
 		}
 		else {
 			if ( value instanceof String string ) {
@@ -952,8 +973,8 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 					return (T) zonedDateTime.toOffsetDateTime();
 				}
 			}
-			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
 		}
+		throw new SQLException( "Unsupported type: " + value.getClass().getName() );
 	}
 
 	private static ZonedDateTime parseTimestamp(String timestamp, @Nullable Calendar calendar) {

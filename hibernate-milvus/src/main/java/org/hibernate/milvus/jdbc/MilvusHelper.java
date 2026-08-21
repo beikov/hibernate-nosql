@@ -16,6 +16,7 @@ public final class MilvusHelper {
 	public static final String DISTANCE_FIELD = "<>";
 	public static final String COSINE_DISTANCE_FIELD = "<=>";
 	public static final String EUCLIDEAN_DISTANCE_FIELD = "<->";
+	public static final String NEGATIVE_IP_DISTANCE_FIELD = "<_>";
 
 	private MilvusHelper() {
 	}
@@ -77,7 +78,7 @@ public final class MilvusHelper {
 			case Float -> "java.lang.Float";
 			case Double -> "java.lang.Double";
 			case JSON -> "java.lang.Object";
-			case BinaryVector, Float16Vector, BFloat16Vector -> "[B";
+			case Int8Vector, BinaryVector, Float16Vector, BFloat16Vector -> "[B";
 			case FloatVector, SparseFloatVector -> "[F";
 			default -> throw new IllegalArgumentException( "Unsupported data type: " + dataType );
 		};
@@ -95,7 +96,7 @@ public final class MilvusHelper {
 			case Float -> Types.FLOAT;
 			case Double -> Types.DOUBLE;
 			case JSON -> Types.OTHER;
-			case BinaryVector, Float16Vector, BFloat16Vector -> Types.BINARY;
+			case Int8Vector, BinaryVector, Float16Vector, BFloat16Vector -> Types.BINARY;
 			default -> throw new IllegalArgumentException( "Unsupported data type: " + dataType );
 		};
 	}

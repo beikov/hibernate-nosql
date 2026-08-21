@@ -31,6 +31,7 @@ public class MilvusSearchResultSet extends AbstractMilvusResultSet {
 			case MilvusHelper.EUCLIDEAN_DISTANCE_FIELD -> Math.sqrt( queryResult.getScore().doubleValue() );
 			// Cosine is given as similarity in the range [-1..1], but we need the distance in [0..2] here
 			case MilvusHelper.COSINE_DISTANCE_FIELD -> 1D - queryResult.getScore().doubleValue();
+			case MilvusHelper.NEGATIVE_IP_DISTANCE_FIELD -> -1D * queryResult.getScore().doubleValue();
 			case MilvusHelper.DISTANCE_FIELD -> queryResult.getScore().doubleValue();
 			default -> queryResult.getEntity().get( field );
 		};

@@ -1,0 +1,21 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * Copyright Red Hat Inc. and Hibernate Authors
+ */
+
+plugins {
+    id "local.java-module"
+}
+
+description = 'Support for testing Hibernate ORM functionality for NoSQL databases'
+
+dependencies {
+    implementation project( ':hibernate-milvus' )
+    implementation project( ':hibernate-neo4j' )
+    implementation libs.hibernate.testing
+    implementation libs.hibernate.vector
+}
+
+test {
+    include '**/**'
+}

@@ -31,8 +31,8 @@ import org.hibernate.tool.schema.spi.Exporter;
 import org.hibernate.type.BasicArrayType;
 import org.hibernate.type.BasicType;
 import org.hibernate.type.BasicTypeRegistry;
-import org.hibernate.type.SqlTypes;
 import org.hibernate.type.StandardBasicTypes;
+import org.hibernate.type.descriptor.java.JavaType;
 import org.hibernate.type.descriptor.java.spi.JavaTypeRegistry;
 import org.hibernate.type.descriptor.jdbc.ArrayJdbcType;
 import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
@@ -66,6 +66,10 @@ import static org.hibernate.type.SqlTypes.TIME_UTC;
 import static org.hibernate.type.SqlTypes.TIME_WITH_TIMEZONE;
 import static org.hibernate.type.SqlTypes.TINYINT;
 import static org.hibernate.type.SqlTypes.VARCHAR;
+import static org.hibernate.type.SqlTypes.VECTOR;
+import static org.hibernate.type.SqlTypes.VECTOR_FLOAT32;
+import static org.hibernate.type.SqlTypes.VECTOR_FLOAT64;
+import static org.hibernate.type.SqlTypes.VECTOR_INT8;
 
 /**
  * An SQL dialect for Neo4j.
@@ -120,24 +124,55 @@ public class Neo4jDialect extends Dialect {
 		jdbcTypeRegistry.addTypeConstructor( Neo4jArrayJdbcType.Neo4jArrayJdbcTypeConstructor.INSTANCE );
 
 		// vector type support
+		final ArrayJdbcType genericVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( FLOAT ), VECTOR );
+		jdbcTypeRegistry.addDescriptor( genericVectorJdbcType );
+		final ArrayJdbcType floatVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( FLOAT ), VECTOR_FLOAT32 );
+		jdbcTypeRegistry.addDescriptor( floatVectorJdbcType );
+		final ArrayJdbcType doubleVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( DOUBLE ), VECTOR_FLOAT64 );
+		jdbcTypeRegistry.addDescriptor( doubleVectorJdbcType );
+		final ArrayJdbcType byteVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( TINYINT ), VECTOR_INT8 );
+		jdbcTypeRegistry.addDescriptor( byteVectorJdbcType );
+
 		final BasicType<Float> floatBasicType = basicTypeRegistry.resolve( StandardBasicTypes.FLOAT );
-		final BasicType<Integer> integerBasicType = basicTypeRegistry.resolve( StandardBasicTypes.INTEGER );
-		final ArrayJdbcType vectorJdbcType = new Neo4jArrayJdbcType( jdbcTypeRegistry.getDescriptor( FLOAT ) );
-		for ( Class<?> vectorJavaType : VECTOR_JAVA_TYPES ) {
-			final BasicType<?> basicType = vectorJavaType == float[].class || vectorJavaType == Float[].class ?
-					floatBasicType :
-					integerBasicType;
-			basicTypeRegistry.register(
-					new BasicArrayType<>(
-							basicType,
-							vectorJdbcType,
-							javaTypeRegistry.getDescriptor( vectorJavaType )
-					),
-					StandardBasicTypes.VECTOR.getName()
-			);
-		}
+		final BasicType<Byte> byteBasicType = basicTypeRegistry.resolve( StandardBasicTypes.BYTE );
+		final JavaType<float[]> floatArrayJavaType = javaTypeRegistry.resolveDescriptor( float[].class );
+		final JavaType<byte[]> byteArrayJavaType = javaTypeRegistry.resolveDescriptor( byte[].class );
+
+		basicTypeRegistry.register(
+				new BasicArrayType<>(
+						floatBasicType,
+						genericVectorJdbcType,
+						floatArrayJavaType
+				),
+				StandardBasicTypes.VECTOR.getName()
+		);
+		basicTypeRegistry.register(
+				new BasicArrayType<>(
+						floatBasicType,
+						floatVectorJdbcType,
+						floatArrayJavaType
+				),
+				StandardBasicTypes.VECTOR_FLOAT32.getName()
+		);
+		basicTypeRegistry.register(
+				new BasicArrayType<>(
+						byteBasicType,
+						byteVectorJdbcType,
+						byteArrayJavaType
+				),
+				StandardBasicTypes.VECTOR_INT8.getName()
+		);
 		ddlTypeRegistry.addDescriptor(
-				new DdlTypeImpl( SqlTypes.VECTOR, "list<integer | float>", this )
+				new DdlTypeImpl( VECTOR, "list<integer | float>", this )
+		);
+		ddlTypeRegistry.addDescriptor(
+				new DdlTypeImpl( VECTOR_FLOAT32, "list<float32>", this )
+		);
+		ddlTypeRegistry.addDescriptor(
+				new DdlTypeImpl( VECTOR_FLOAT64, "list<float64>", this )
+		);
+		ddlTypeRegistry.addDescriptor(
+				new DdlTypeImpl( VECTOR_INT8, "list<integer8>", this )
 		);
 
 		// todo neo4j : json type support ?
@@ -255,6 +290,16 @@ public class Neo4jDialect extends Dialect {
 	@Override
 	public DmlTargetColumnQualifierSupport getDmlTargetColumnQualifierSupport() {
 		return DmlTargetColumnQualifierSupport.TABLE_ALIAS;
+	}
+
+	@Override
+	public boolean canBatchTruncate() {
+		return true;
+	}
+
+	@Override
+	public String getTruncateTableStatement(String tableName) {
+		return "match(n:" + tableName + ") detach delete n";
 	}
 
 	@Override

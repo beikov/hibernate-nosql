@@ -117,6 +117,8 @@ buildCache {
 include 'hibernate-nosql-core'
 include 'hibernate-milvus'
 include 'hibernate-neo4j'
+include 'hibernate-vector-tests'
+include 'hibernate-nosql-testing'
 
 include 'hibernate-platform'
 

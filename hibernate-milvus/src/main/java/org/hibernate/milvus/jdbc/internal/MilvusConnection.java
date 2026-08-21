@@ -27,7 +27,10 @@ import io.milvus.v2.service.vector.request.SearchReq;
 import io.milvus.v2.service.vector.request.UpsertReq;
 import io.milvus.v2.service.vector.request.data.BaseVector;
 import io.milvus.v2.service.vector.request.data.BinaryVec;
+import io.milvus.v2.service.vector.request.data.Float16Vec;
 import io.milvus.v2.service.vector.request.data.FloatVec;
+import io.milvus.v2.service.vector.request.data.Int8Vec;
+import io.milvus.v2.service.vector.request.data.SparseFloatVec;
 import io.milvus.v2.service.vector.request.ranker.RRFRanker;
 import io.milvus.v2.service.vector.request.ranker.WeightedRanker;
 import io.milvus.v2.service.vector.response.DeleteResp;
@@ -59,6 +62,7 @@ import org.hibernate.sql.ast.spi.StringBuilderSqlAppender;
 import org.hibernate.type.descriptor.DateTimeUtils;
 import org.jetbrains.annotations.NotNull;
 
+import java.nio.ByteBuffer;
 import java.sql.Array;
 import java.sql.Blob;
 import java.sql.CallableStatement;
@@ -89,6 +93,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.SortedMap;
 import java.util.TimeZone;
 import java.util.concurrent.Executor;
 
@@ -585,6 +590,48 @@ public class MilvusConnection implements Connection {
 			}
 			return array;
 		}
+		else if ( parameterValue instanceof BinaryVec binaryVec ) {
+			final byte[] bytes = ((ByteBuffer) binaryVec.getData()).array();
+			final JsonArray array = new JsonArray( bytes.length );
+			for ( byte o : bytes ) {
+				array.add( new JsonPrimitive( o ) );
+			}
+			return array;
+		}
+		else if ( parameterValue instanceof Int8Vec int8Vec ) {
+			final byte[] bytes = ((ByteBuffer) int8Vec.getData()).array();
+			final JsonArray array = new JsonArray( bytes.length );
+			for ( byte o : bytes ) {
+				array.add( new JsonPrimitive( o ) );
+			}
+			return array;
+		}
+		else if ( parameterValue instanceof Float16Vec float16Vec ) {
+			final byte[] bytes = ((ByteBuffer) float16Vec.getData()).array();
+			final JsonArray array = new JsonArray( bytes.length );
+			for ( byte o : bytes ) {
+				array.add( new JsonPrimitive( o ) );
+			}
+			return array;
+		}
+		else if ( parameterValue instanceof FloatVec floatVec ) {
+			@SuppressWarnings("unchecked")
+			final List<Float> floats = (List<Float>) floatVec.getData();
+			final JsonArray array = new JsonArray( floats.size() );
+			for ( Float o : floats ) {
+				array.add( new JsonPrimitive( o ) );
+			}
+			return array;
+		}
+		else if ( parameterValue instanceof SparseFloatVec sparseFloatVec ) {
+			@SuppressWarnings("unchecked")
+			final SortedMap<Long, Float> sparseFloats = (SortedMap<Long, Float>) sparseFloatVec.getData();
+			final JsonObject jsonObject = new JsonObject();
+			for ( final var entry : sparseFloats.entrySet() ) {
+				jsonObject.add( entry.getKey().toString(), new JsonPrimitive( entry.getValue() ) );
+			}
+			return jsonObject;
+		}
 		else {
 			throw new SQLException( "Unsupported parameter type: " + parameterValue.getClass().getName() );
 		}
@@ -721,7 +768,9 @@ public class MilvusConnection implements Connection {
 						: query.getOutputFields().contains( MilvusHelper.COSINE_DISTANCE_FIELD )
 								? MilvusHelper.COSINE_DISTANCE_FIELD
 								: query.getOutputFields().contains( MilvusHelper.EUCLIDEAN_DISTANCE_FIELD )
-										? MilvusHelper.EUCLIDEAN_DISTANCE_FIELD : null;
+										? MilvusHelper.EUCLIDEAN_DISTANCE_FIELD
+										: query.getOutputFields().contains( MilvusHelper.NEGATIVE_IP_DISTANCE_FIELD )
+											? MilvusHelper.NEGATIVE_IP_DISTANCE_FIELD : null;
 				if ( fieldToRemove != null ) {
 					final ArrayList<String> outputFields = new ArrayList<>( query.getOutputFields().size() - 1 );
 					for ( String outputField : query.getOutputFields() ) {
@@ -777,7 +826,10 @@ public class MilvusConnection implements Connection {
 			final BaseVector vector;
 			if ( value instanceof MilvusParameterValue parameter ) {
 				final Object parameterValue = parameterValues[parameter.index()];
-				if ( parameterValue instanceof float[] floats ) {
+				if ( parameterValue instanceof BaseVector baseVector ) {
+					vector = baseVector;
+				}
+				else if ( parameterValue instanceof float[] floats ) {
 					vector = new FloatVec( floats );
 				}
 				else if ( parameterValue instanceof byte[] bytes ) {
@@ -793,7 +845,8 @@ public class MilvusConnection implements Connection {
 				else if ( parameterValue instanceof MilvusArray array ) {
 					vector = switch ( array.getBaseDataType() ) {
 						case Float -> new FloatVec( Arrays.asList( (Float[]) array.getArray() ) );
-						case BinaryVector -> new BinaryVec( (byte[]) array.getArray() );
+						case Int8 -> new Int8Vec( (byte[]) array.getArray() );
+						case Bool -> new BinaryVec( (byte[]) array.getArray() );
 						default -> throw new SQLException( "Unsupported vector type: " + array.getArray().getClass().getName() );
 					};
 				}

@@ -129,7 +129,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	public static final String DEFAULT_EMBEDDING_FIELD = "embedding";
 
 	private static final Set<String> SUPPORTED_AGGREGATE_FUNCTIONS = Set.of( "count", "sum", "avg", "min", "max" );
-	private static final String TRUE_CONSTANT = "1==1";
+	private static final String TRUE_CONSTANT = "1=1";
 
 	private MilvusStatementDefinition milvusStatement;
 
@@ -383,7 +383,15 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 				query.setFilter( filter );
 			}
 			else if ( milvusStatement instanceof MilvusDelete delete ) {
-				delete.setFilter( determineFilter() );
+				final String filter = determineFilter();
+				if ( filter.isEmpty() ) {
+					// Delete without filter and ids list doesn't work, and always true constants also don't work,
+					// so we have to use a primary key not null predicate instead
+					delete.setFilter( getPrimaryKey().getSelectionExpression() + " is not null" );
+				}
+				else {
+					delete.setFilter( filter );
+				}
 			}
 			else {
 				throw new UnsupportedOperationException( "MilvusStatement is not supported by Milvus" );
@@ -1004,6 +1012,9 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 			}
 			else if ( distanceFunctionKind == DistanceFunctionKind.EUCLIDEAN ) {
 				milvusQuery.getOutputFields().add( MilvusHelper.EUCLIDEAN_DISTANCE_FIELD );
+			}
+			else if ( distanceFunctionKind == DistanceFunctionKind.NEGATIVE_INNER_PRODUCT ) {
+				milvusQuery.getOutputFields().add( MilvusHelper.NEGATIVE_IP_DISTANCE_FIELD );
 			}
 			else {
 				milvusQuery.getOutputFields().add( MilvusHelper.DISTANCE_FIELD );

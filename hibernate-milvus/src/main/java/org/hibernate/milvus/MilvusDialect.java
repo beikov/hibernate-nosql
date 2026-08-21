@@ -43,16 +43,17 @@ import org.hibernate.type.BasicType;
 import org.hibernate.type.BasicTypeRegistry;
 import org.hibernate.type.SqlTypes;
 import org.hibernate.type.StandardBasicTypes;
+import org.hibernate.type.descriptor.java.JavaType;
 import org.hibernate.type.descriptor.java.spi.JavaTypeRegistry;
 import org.hibernate.type.descriptor.jdbc.ArrayJdbcType;
 import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
 import org.hibernate.type.descriptor.sql.internal.DdlTypeImpl;
 import org.hibernate.type.descriptor.sql.spi.DdlTypeRegistry;
 import org.hibernate.type.spi.TypeConfiguration;
+import org.hibernate.vector.internal.SparseFloatVectorJavaType;
 import org.hibernate.vector.internal.VectorArgumentTypeResolver;
 import org.hibernate.vector.internal.VectorArgumentValidator;
 
-import java.lang.reflect.Type;
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
 import java.util.regex.Matcher;
@@ -85,14 +86,6 @@ public class MilvusDialect extends Dialect {
 
 	private static final Pattern VERSION_PATTERN = Pattern.compile( "\\d+\\.\\d+(\\.\\d+)?-.+" );
 	private static final DatabaseVersion MINIMUM_VERSION = DatabaseVersion.make( 2, 5 );
-	private static final Type[] VECTOR_JAVA_TYPES = {
-			Float[].class,
-			float[].class
-	};
-	private static final Type[] BINARY_VECTOR_JAVA_TYPES = {
-			Byte[].class,
-			byte[].class
-	};
 
 	@SuppressWarnings("unused")
 	public MilvusDialect() {
@@ -165,37 +158,96 @@ public class MilvusDialect extends Dialect {
 		typeContributions.contributeJdbcType( UuidAsVarcharJdbcType.INSTANCE );
 		typeContributions.contributeJdbcType( MilvusJsonJdbcType.INSTANCE );
 
+		final ArrayJdbcType genericVectorJdbcType = new MilvusFloat32VectorJdbcType(
+				jdbcTypeRegistry.getDescriptor( FLOAT ),
+				VECTOR
+		);
+		typeContributions.contributeJdbcType( genericVectorJdbcType );
+		final ArrayJdbcType floatVectorJdbcType = new MilvusFloat32VectorJdbcType(
+				jdbcTypeRegistry.getDescriptor( FLOAT ),
+				VECTOR_FLOAT32
+		);
+		typeContributions.contributeJdbcType( floatVectorJdbcType );
+		final ArrayJdbcType float16VectorJdbcType = new MilvusFloat16VectorJdbcType(
+				jdbcTypeRegistry.getDescriptor( FLOAT ),
+				VECTOR_FLOAT16
+		);
+		typeContributions.contributeJdbcType( float16VectorJdbcType );
+		final ArrayJdbcType byteVectorJdbcType = new MilvusByteVectorJdbcType(
+				jdbcTypeRegistry.getDescriptor( TINYINT ),
+				VECTOR_INT8
+		);
+		typeContributions.contributeJdbcType( byteVectorJdbcType );
+		final ArrayJdbcType binaryVectorJdbcType = new MilvusBinaryVectorJdbcType(
+				jdbcTypeRegistry.getDescriptor( TINYINT ),
+				VECTOR_BINARY
+		);
+		typeContributions.contributeJdbcType( binaryVectorJdbcType );
+		jdbcTypeRegistry.addTypeConstructor( new MilvusSparseFloat32VectorJdbcTypeConstructor() );
+
+		javaTypeRegistry.addDescriptor( SparseFloatVectorJavaType.INSTANCE );
+
 		final BasicType<Float> floatBasicType = basicTypeRegistry.resolve( StandardBasicTypes.FLOAT );
 		final BasicType<Byte> byteBasicType = basicTypeRegistry.resolve( StandardBasicTypes.BYTE );
-		final ArrayJdbcType vectorJdbcType = new MilvusVectorJdbcType( jdbcTypeRegistry.getDescriptor( FLOAT ) );
-		final ArrayJdbcType binaryVectorJdbcType = new MilvusBinaryVectorJdbcType( jdbcTypeRegistry.getDescriptor( TINYINT ) );
-		typeContributions.contributeJdbcType( vectorJdbcType );
-		typeContributions.contributeJdbcType( binaryVectorJdbcType );
-		for ( Type vectorJavaType : VECTOR_JAVA_TYPES ) {
-			basicTypeRegistry.register(
-					new BasicArrayType<>(
-							floatBasicType,
-							vectorJdbcType,
-							javaTypeRegistry.getDescriptor( vectorJavaType )
-					),
-					StandardBasicTypes.VECTOR.getName()
-			);
-		}
-		for ( Type vectorJavaType : BINARY_VECTOR_JAVA_TYPES ) {
-			basicTypeRegistry.register(
-					new BasicArrayType<>(
-							byteBasicType,
-							binaryVectorJdbcType,
-							javaTypeRegistry.getDescriptor( vectorJavaType )
-					),
-					StandardBasicTypes.VECTOR_INT8.getName()
-			);
-		}
+		final JavaType<float[]> floatArrayJavaType = javaTypeRegistry.resolveDescriptor( float[].class );
+		final JavaType<byte[]> byteArrayJavaType = javaTypeRegistry.resolveDescriptor( byte[].class );
+		basicTypeRegistry.register(
+				new BasicArrayType<>(
+						floatBasicType,
+						genericVectorJdbcType,
+						floatArrayJavaType
+				),
+				StandardBasicTypes.VECTOR.getName()
+		);
+		basicTypeRegistry.register(
+				new BasicArrayType<>(
+						floatBasicType,
+						floatVectorJdbcType,
+						floatArrayJavaType
+				),
+				StandardBasicTypes.VECTOR_FLOAT32.getName()
+		);
+		basicTypeRegistry.register(
+				new BasicArrayType<>(
+						floatBasicType,
+						float16VectorJdbcType,
+						floatArrayJavaType
+				),
+				StandardBasicTypes.VECTOR_FLOAT16.getName()
+		);
+		basicTypeRegistry.register(
+				new BasicArrayType<>(
+						byteBasicType,
+						byteVectorJdbcType,
+						byteArrayJavaType
+				),
+				StandardBasicTypes.VECTOR_INT8.getName()
+		);
+		basicTypeRegistry.register(
+				new BasicArrayType<>(
+						byteBasicType,
+						binaryVectorJdbcType,
+						byteArrayJavaType
+				),
+				StandardBasicTypes.VECTOR_BINARY.getName()
+		);
 		ddlTypeRegistry.addDescriptor(
 				new DdlTypeImpl( VECTOR, "float_vector", this )
 		);
 		ddlTypeRegistry.addDescriptor(
-				new DdlTypeImpl( VECTOR_INT8, "binary_vector", this )
+				new DdlTypeImpl( VECTOR_FLOAT32, "float_vector", this )
+		);
+		ddlTypeRegistry.addDescriptor(
+				new DdlTypeImpl( VECTOR_INT8, "byte_vector", this )
+		);
+		ddlTypeRegistry.addDescriptor(
+				new DdlTypeImpl( VECTOR_BINARY, "binary_vector", this )
+		);
+		ddlTypeRegistry.addDescriptor(
+				new DdlTypeImpl( VECTOR_FLOAT16, "float16_vector", this )
+		);
+		ddlTypeRegistry.addDescriptor(
+				new DdlTypeImpl( SPARSE_VECTOR_FLOAT32, "sparse_float_vector", this )
 		);
 		ddlTypeRegistry.addDescriptor(
 				new DdlTypeImpl( JSON, "json", this )

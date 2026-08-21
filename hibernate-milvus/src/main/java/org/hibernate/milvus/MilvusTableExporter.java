@@ -66,12 +66,12 @@ public class MilvusTableExporter implements Exporter<Table> {
 				else {
 					dataType = baseDataType;
 					final boolean isVector = switch ( dataType ) {
-						case FloatVector, Float16Vector, BFloat16Vector, BinaryVector, SparseFloatVector -> true;
+						case FloatVector, Float16Vector, BFloat16Vector, Int8Vector, BinaryVector, SparseFloatVector -> true;
 						default -> false;
 					};
 					hasVector = hasVector ||  isVector;
 					dimension = switch ( dataType ) {
-						case FloatVector, Float16Vector, BFloat16Vector, SparseFloatVector -> column.getArrayLength();
+						case FloatVector, Float16Vector, BFloat16Vector, SparseFloatVector, Int8Vector -> column.getArrayLength();
 						case BinaryVector -> column.getArrayLength() * 8;
 						default -> null;
 					};
@@ -200,7 +200,7 @@ public class MilvusTableExporter implements Exporter<Table> {
 				final var fieldSchema = fields.get( fieldIndex );
 				final var indexName = collectionName + (fieldSchema.isPrimaryKey() ? "_pk" : "_" + fieldSchema.name());
 				final var metricType = switch ( fieldSchema.dataType() ) {
-					case FloatVector, Float16Vector, BFloat16Vector, SparseFloatVector -> IndexParam.MetricType.COSINE;
+					case FloatVector, Float16Vector, BFloat16Vector, Int8Vector, SparseFloatVector -> IndexParam.MetricType.COSINE;
 					case BinaryVector -> IndexParam.MetricType.HAMMING;
 					default -> null;
 				};

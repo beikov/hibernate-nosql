@@ -10,12 +10,10 @@ import jakarta.persistence.Id;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import org.hibernate.annotations.Array;
-import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.testing.orm.junit.DomainModel;
 import org.hibernate.testing.orm.junit.RequiresDialect;
 import org.hibernate.testing.orm.junit.SessionFactory;
 import org.hibernate.testing.orm.junit.SessionFactoryScope;
-import org.hibernate.type.SqlTypes;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 
@@ -186,7 +184,7 @@ public class Neo4jTest {
 
 	@AfterAll
 	public void tearDown(SessionFactoryScope scope) {
-		scope.getSessionFactory().getSchemaManager().truncateMappedObjects();
+		scope.dropData();
 	}
 
 	@Entity(name = "TestEntity")
@@ -224,18 +222,14 @@ public class Neo4jTest {
 		private Long id;
 
 		@Column(name = "string_array", nullable = false)
-		@JdbcTypeCode(SqlTypes.ARRAY)
 		@Array(length = 3)
 		private String[] stringArray;
 
 		@Column(name = "integer_array")
-		@JdbcTypeCode(SqlTypes.ARRAY)
 		@Array(length = 33)
 		private Integer[] integerArray;
 
 		@Column(name = "byte_array")
-		@JdbcTypeCode(SqlTypes.VECTOR)
-		@Array(length = 100)
 		private byte[] byteArray;
 	}
 }

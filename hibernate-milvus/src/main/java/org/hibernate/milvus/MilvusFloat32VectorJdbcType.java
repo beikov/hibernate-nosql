@@ -4,7 +4,6 @@
  */
 package org.hibernate.milvus;
 
-import org.hibernate.type.SqlTypes;
 import org.hibernate.type.descriptor.ValueBinder;
 import org.hibernate.type.descriptor.ValueExtractor;
 import org.hibernate.type.descriptor.WrapperOptions;
@@ -20,15 +19,18 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-public class MilvusVectorJdbcType extends ArrayJdbcType {
+public class MilvusFloat32VectorJdbcType extends ArrayJdbcType {
 
-	public MilvusVectorJdbcType(JdbcType elementJdbcType) {
+	private final int sqlType;
+
+	public MilvusFloat32VectorJdbcType(JdbcType elementJdbcType, int sqlType) {
 		super( elementJdbcType );
+		this.sqlType = sqlType;
 	}
 
 	@Override
 	public int getDefaultSqlTypeCode() {
-		return SqlTypes.VECTOR;
+		return sqlType;
 	}
 
 	@Override
