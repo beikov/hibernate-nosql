@@ -39,6 +39,7 @@ import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
 import org.hibernate.type.descriptor.sql.internal.DdlTypeImpl;
 import org.hibernate.type.descriptor.sql.spi.DdlTypeRegistry;
 import org.hibernate.type.spi.TypeConfiguration;
+import org.hibernate.vector.internal.VectorFunctionFactory;
 
 import static org.hibernate.type.SqlTypes.BIGINT;
 import static org.hibernate.type.SqlTypes.BOOLEAN;
@@ -76,14 +77,7 @@ import static org.hibernate.type.SqlTypes.VECTOR_INT8;
  */
 public class Neo4jDialect extends Dialect {
 
-	private static final DatabaseVersion MINIMUM_VERSION = DatabaseVersion.make( 5, 0 );
-
-	private static final Class<?>[] VECTOR_JAVA_TYPES = {
-			Float[].class,
-			float[].class,
-			Integer[].class,
-			int[].class,
-	};
+	private static final DatabaseVersion MINIMUM_VERSION = DatabaseVersion.make( 5, 26 );
 
 	private final UniqueDelegate uniqueDelegate = new Neo4jUniqueDelegate( this );
 
@@ -124,13 +118,14 @@ public class Neo4jDialect extends Dialect {
 		jdbcTypeRegistry.addTypeConstructor( Neo4jArrayJdbcType.Neo4jArrayJdbcTypeConstructor.INSTANCE );
 
 		// vector type support
-		final ArrayJdbcType genericVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( FLOAT ), VECTOR );
+		final boolean nativeVectorSupport = isEnterpriseEdition();
+		final ArrayJdbcType genericVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( FLOAT ), nativeVectorSupport, VECTOR );
 		jdbcTypeRegistry.addDescriptor( genericVectorJdbcType );
-		final ArrayJdbcType floatVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( FLOAT ), VECTOR_FLOAT32 );
+		final ArrayJdbcType floatVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( FLOAT ), nativeVectorSupport, VECTOR_FLOAT32 );
 		jdbcTypeRegistry.addDescriptor( floatVectorJdbcType );
-		final ArrayJdbcType doubleVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( DOUBLE ), VECTOR_FLOAT64 );
+		final ArrayJdbcType doubleVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( DOUBLE ), nativeVectorSupport, VECTOR_FLOAT64 );
 		jdbcTypeRegistry.addDescriptor( doubleVectorJdbcType );
-		final ArrayJdbcType byteVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( TINYINT ), VECTOR_INT8 );
+		final ArrayJdbcType byteVectorJdbcType = new Neo4jVectorJdbcType( jdbcTypeRegistry.getDescriptor( TINYINT ), nativeVectorSupport, VECTOR_INT8 );
 		jdbcTypeRegistry.addDescriptor( byteVectorJdbcType );
 
 		final BasicType<Float> floatBasicType = basicTypeRegistry.resolve( StandardBasicTypes.FLOAT );
@@ -162,18 +157,34 @@ public class Neo4jDialect extends Dialect {
 				),
 				StandardBasicTypes.VECTOR_INT8.getName()
 		);
-		ddlTypeRegistry.addDescriptor(
-				new DdlTypeImpl( VECTOR, "list<integer | float>", this )
-		);
-		ddlTypeRegistry.addDescriptor(
-				new DdlTypeImpl( VECTOR_FLOAT32, "list<float32>", this )
-		);
-		ddlTypeRegistry.addDescriptor(
-				new DdlTypeImpl( VECTOR_FLOAT64, "list<float64>", this )
-		);
-		ddlTypeRegistry.addDescriptor(
-				new DdlTypeImpl( VECTOR_INT8, "list<integer8>", this )
-		);
+		if ( nativeVectorSupport ) {
+			ddlTypeRegistry.addDescriptor(
+					new Neo4jVectorDdlType( VECTOR, "vector<float32>($a)", this )
+			);
+			ddlTypeRegistry.addDescriptor(
+					new Neo4jVectorDdlType( VECTOR_FLOAT32, "vector<float32>($a)", this )
+			);
+			ddlTypeRegistry.addDescriptor(
+					new Neo4jVectorDdlType( VECTOR_FLOAT64, "vector<float64>($a)", this )
+			);
+			ddlTypeRegistry.addDescriptor(
+					new Neo4jVectorDdlType( VECTOR_INT8, "vector<integer8>($a)", this )
+			);
+		}
+		else {
+			ddlTypeRegistry.addDescriptor(
+					new DdlTypeImpl( VECTOR, "list<integer | float>", this )
+			);
+			ddlTypeRegistry.addDescriptor(
+					new DdlTypeImpl( VECTOR_FLOAT32, "list<float32>", this )
+			);
+			ddlTypeRegistry.addDescriptor(
+					new DdlTypeImpl( VECTOR_FLOAT64, "list<float64>", this )
+			);
+			ddlTypeRegistry.addDescriptor(
+					new DdlTypeImpl( VECTOR_INT8, "list<integer8>", this )
+			);
+		}
 
 		// todo neo4j : json type support ?
 	}
@@ -189,7 +200,7 @@ public class Neo4jDialect extends Dialect {
 		final TypeConfiguration typeConfiguration = functionContributions.getTypeConfiguration();
 		final BasicTypeRegistry basicTypeRegistry = typeConfiguration.getBasicTypeRegistry();
 		final SqmFunctionRegistry functionRegistry = functionContributions.getFunctionRegistry();
-		final BasicType<Double> doubleBasicType = basicTypeRegistry.resolve( StandardBasicTypes.DOUBLE );
+		final BasicType<Double> doubleType = basicTypeRegistry.resolve( StandardBasicTypes.DOUBLE );
 		final CommonFunctionFactory functionFactory = new CommonFunctionFactory( functionContributions );
 
 		// aggregating functions https://neo4j.com/docs/cypher-manual/current/functions/aggregating/
@@ -197,7 +208,7 @@ public class Neo4jDialect extends Dialect {
 				.setArgumentRenderingMode( SqlAstNodeRenderingMode.DEFAULT )
 				.setExactArgumentCount( 2 )
 				.setParameterTypes( FunctionParameterType.NUMERIC, FunctionParameterType.NUMERIC )
-				.setReturnTypeResolver( StandardFunctionReturnTypeResolvers.invariant( doubleBasicType ) )
+				.setReturnTypeResolver( StandardFunctionReturnTypeResolvers.invariant( doubleType ) )
 				.register();
 		functionRegistry.registerAlternateKey( "percentile_cont", "percentileCont" );
 		functionRegistry.namedAggregateDescriptorBuilder( "percentileDisc" )
@@ -205,20 +216,20 @@ public class Neo4jDialect extends Dialect {
 				.setExactArgumentCount( 2 )
 				.setParameterTypes( FunctionParameterType.NUMERIC, FunctionParameterType.NUMERIC )
 				.setArgumentTypeResolver( StandardFunctionArgumentTypeResolvers.ARGUMENT_OR_IMPLIED_RESULT_TYPE )
-				.setReturnTypeResolver( StandardFunctionReturnTypeResolvers.invariant( doubleBasicType ) )
+				.setReturnTypeResolver( StandardFunctionReturnTypeResolvers.invariant( doubleType ) )
 				.register();
 		functionRegistry.registerAlternateKey( "percentile_disc", "percentileDisc" );
 		functionRegistry.namedAggregateDescriptorBuilder( "stDev" )
 				.setArgumentRenderingMode( SqlAstNodeRenderingMode.DEFAULT )
 				.setExactArgumentCount( 1 )
 				.setParameterTypes( FunctionParameterType.NUMERIC )
-				.setReturnTypeResolver( StandardFunctionReturnTypeResolvers.invariant( doubleBasicType ) )
+				.setReturnTypeResolver( StandardFunctionReturnTypeResolvers.invariant( doubleType ) )
 				.register();
 		functionRegistry.namedAggregateDescriptorBuilder( "stDevP" )
 				.setArgumentRenderingMode( SqlAstNodeRenderingMode.DEFAULT )
 				.setExactArgumentCount( 1 )
 				.setParameterTypes( FunctionParameterType.NUMERIC )
-				.setReturnTypeResolver( StandardFunctionReturnTypeResolvers.invariant( doubleBasicType ) )
+				.setReturnTypeResolver( StandardFunctionReturnTypeResolvers.invariant( doubleType ) )
 				.register();
 
 		// mathematical functions https://neo4j.com/docs/cypher-manual/current/functions/mathematical-logarithmic/
@@ -226,6 +237,45 @@ public class Neo4jDialect extends Dialect {
 		functionFactory.log_loglog();
 		functionFactory.log10();
 		functionFactory.concat_pipeOperator();
+
+		if ( getVersion().isSameOrAfter( 2025, 10 ) ) {
+			final VectorFunctionFactory vectorFunctionFactory = new VectorFunctionFactory( functionContributions );
+			final BasicType<Integer> integerType = basicTypeRegistry.resolve( StandardBasicTypes.INTEGER );
+			final boolean nativeVectorSupport = isEnterpriseEdition();
+
+			if ( nativeVectorSupport ) {
+				vectorFunctionFactory.cosineDistance( "vector_distance(?1,?2,COSINE)" );
+				vectorFunctionFactory.euclideanDistance( "vector_distance(?1,?2,EUCLIDEAN)" );
+				vectorFunctionFactory.euclideanSquaredDistance( "vector_distance(?1,?2,EUCLIDEAN_SQUARED)" );
+				vectorFunctionFactory.l1Distance( "vector_distance(?1,?2,MANHATTAN)" );
+				vectorFunctionFactory.hammingDistance( "vector_distance(?1,?2,HAMMING)" );
+
+				vectorFunctionFactory.innerProduct( "vector_distance(?1,?2,DOT)*-1" );
+				vectorFunctionFactory.negativeInnerProduct( "vector_distance(?1,?2,DOT)" );
+
+				vectorFunctionFactory.registerNamedVectorFunction( "vector_dimension_count", integerType, 1 );
+				functionContributions.getFunctionRegistry().registerAlternateKey( "vector_dims", "vector_dimension_count" );
+				vectorFunctionFactory.registerPatternVectorFunction( "vector_norm", "vector_norm(?1,EUCLIDEAN)", doubleType, 1 );
+			}
+			else {
+				functionRegistry.register( "cosine_distance", new Neo4jVectorDistanceFunction( "cosine", typeConfiguration ) );
+				functionRegistry.register( "euclidean_distance", new Neo4jVectorDistanceFunction( "euclidean", typeConfiguration ) );
+				functionRegistry.registerAlternateKey( "l2_distance", "euclidean_distance" );
+				functionRegistry.register( "euclidean_squared_distance", new Neo4jVectorDistanceFunction( "euclidean_squared", typeConfiguration ) );
+				functionRegistry.registerAlternateKey( "l2_squared_distance", "euclidean_squared_distance" );
+				functionRegistry.register( "l1_distance", new Neo4jVectorDistanceFunction( "manhattan", typeConfiguration ) );
+				functionRegistry.registerAlternateKey( "taxicab_distance", "l1_distance" );
+				functionRegistry.register( "hamming_distance", new Neo4jVectorDistanceFunction( "hamming", typeConfiguration ) );
+
+				functionRegistry.register( "inner_product", new Neo4jVectorDistanceFunction( "dot", "*-1", typeConfiguration ) );
+				functionRegistry.register( "negative_inner_product", new Neo4jVectorDistanceFunction( "dot", typeConfiguration ) );
+
+				functionRegistry.register( "vector_dimension_count", new Neo4jVectorFunction( "vector_dimension_count", integerType ) );
+				functionContributions.getFunctionRegistry().registerAlternateKey( "vector_dims", "vector_dimension_count" );
+				functionRegistry.register( "vector_norm", new Neo4jVectorFunction( "vector_norm", doubleType, ",euclidean" ) );
+			}
+
+		}
 
 		// todo neo4j : a lot of functions are added by the apoc plugin https://neo4j.com/labs/apoc/
 		//  would be great to detect it at startup and register them here
@@ -327,16 +377,24 @@ public class Neo4jDialect extends Dialect {
 		return "date()";
 	}
 
+	@Override
 	public String currentTime() {
 		return "localtime()";
 	}
 
+	@Override
 	public String currentTimestamp() {
 		return "localdatetime()";
 	}
 
+	@Override
 	public String currentTimestampWithTimeZone() {
 		return "datetime()";
+	}
+
+	@Override
+	public boolean supportsOrdinalSelectItemReference() {
+		return false;
 	}
 
 	@Override

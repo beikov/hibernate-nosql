@@ -82,6 +82,12 @@ dependencies {
         testRuntimeOnly libs.jdbc.neo4j
         testRuntimeOnly project(":hibernate-neo4j")
     }
+    else if ( db.startsWith( 'oracle' ) ) {
+        testRuntimeOnly libs.jdbc.oracle
+    }
+    else if ( db.startsWith( 'postgresql' ) ) {
+        testRuntimeOnly libs.jdbc.postgresql
+    }
 
     annotationProcessor libs.loggingProcessor
     annotationProcessor libs.logging

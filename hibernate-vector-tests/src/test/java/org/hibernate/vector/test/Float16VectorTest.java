@@ -92,7 +92,7 @@ public class Float16VectorTest extends FloatVectorTest {
 	public void testL2Normalize(SessionFactoryScope scope) {
 		scope.inTransaction( em -> {
 			final List<Tuple> results = em.createSelectionQuery(
-							"select e.id, l2_normalize(e.theVector) from VectorEntity e order by e.id",
+							"select e.id, l2_normalize(e.theIpVector) from VectorEntity e order by e.id",
 							Tuple.class
 					)
 					.getResultList();

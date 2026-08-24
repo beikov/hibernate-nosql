@@ -11,6 +11,7 @@ import jakarta.persistence.Tuple;
 import org.hibernate.annotations.Array;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.boot.spi.AdditionalMappingContributor;
+import org.hibernate.dialect.OracleDialect;
 import org.hibernate.dialect.PostgreSQLDialect;
 import org.hibernate.dialect.PostgresPlusDialect;
 import org.hibernate.nosql.testing.EventualConsistentTestHelper;
@@ -102,6 +103,7 @@ public class BinaryFloatVectorTest {
 	@Test
 	@RequiresDialectFeature(feature = DialectFeatureChecks.SupportsJaccardDistance.class)
 	@SkipForDialect(dialectClass = PostgreSQLDialect.class, matchSubTypes = true, reason = "Only supported with bit vectors")
+	@SkipForDialect(dialectClass = OracleDialect.class, matchSubTypes = true, reason = "Only supported with bit vectors")
 	public void testJaccardDistance(SessionFactoryScope scope) {
 		scope.inTransaction( em -> {
 			final float[] vector = new float[] { 1, 1, 1 };

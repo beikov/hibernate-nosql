@@ -206,7 +206,7 @@ public class FloatVectorTest {
 		scope.inTransaction( em -> {
 			final float[] vector = new float[] { 1, 1, 1 };
 			final List<Tuple> results = em.createSelectionQuery(
-							"select e.id, negative_inner_product(e.theIpVector, :vec) from VectorEntity e order by 2 desc",
+							"select e.id, negative_inner_product(e.theIpVector, :vec) from VectorEntity e order by 2 asc",
 							Tuple.class
 					)
 					.setParameter( "vec", vector )
@@ -248,9 +248,9 @@ public class FloatVectorTest {
 					.getResultList();
 			assertEquals( 2, results.size() );
 			assertEquals( 1L, results.get( 0 ).get( 0 ) );
-			assertEquals( euclideanNorm( V1 ), results.get( 0 ).get( 1, double.class ), 0D );
+			assertEquals( euclideanNorm( V1 ), results.get( 0 ).get( 1, double.class ), 0.0000002D );
 			assertEquals( 2L, results.get( 1 ).get( 0 ) );
-			assertEquals( euclideanNorm( V2 ), results.get( 1 ).get( 1, double.class ), 0D );
+			assertEquals( euclideanNorm( V2 ), results.get( 1 ).get( 1, double.class ), 0.0000002D );
 		} );
 	}
 

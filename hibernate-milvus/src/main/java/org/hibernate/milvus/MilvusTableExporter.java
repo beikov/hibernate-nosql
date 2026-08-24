@@ -71,8 +71,7 @@ public class MilvusTableExporter implements Exporter<Table> {
 					};
 					hasVector = hasVector ||  isVector;
 					dimension = switch ( dataType ) {
-						case FloatVector, Float16Vector, BFloat16Vector, SparseFloatVector, Int8Vector -> column.getArrayLength();
-						case BinaryVector -> column.getArrayLength() * 8;
+						case FloatVector, Float16Vector, BFloat16Vector, SparseFloatVector, Int8Vector, BinaryVector -> column.getArrayLength();
 						default -> null;
 					};
 					if ( isVector ) {
