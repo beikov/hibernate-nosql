@@ -6,8 +6,10 @@ package org.hibernate.neo4j;
 
 import jakarta.annotation.Nullable;
 import org.hibernate.HibernateException;
+import org.hibernate.dialect.Dialect;
 import org.hibernate.engine.jdbc.Size;
 import org.hibernate.metamodel.mapping.JdbcMapping;
+import org.hibernate.sql.ast.spi.SqlAppender;
 import org.hibernate.type.descriptor.ValueBinder;
 import org.hibernate.type.descriptor.WrapperOptions;
 import org.hibernate.type.descriptor.java.BasicPluralJavaType;
@@ -25,10 +27,12 @@ import java.sql.Types;
 
 public class Neo4jVectorJdbcType extends Neo4jArrayJdbcType {
 
+	private final boolean nativeSupport;
 	private final int sqlType;
 
-	public Neo4jVectorJdbcType(JdbcType elementJdbcType, int sqlType) {
+	public Neo4jVectorJdbcType(JdbcType elementJdbcType, boolean nativeSupport, int sqlType) {
 		super( elementJdbcType );
+		this.nativeSupport = nativeSupport;
 		this.sqlType = sqlType;
 	}
 
@@ -47,7 +51,25 @@ public class Neo4jVectorJdbcType extends Neo4jArrayJdbcType {
 		return targetJdbcMapping.getJdbcType().isStringLike() ? "replace(replace(replace(apoc.convert.toYaml(?1),'---\\n- ','['),'\\n- ',','),'\\n',']')" : null;
 	}
 
-	private String getVectorParameters(@Nullable Size size) {
+	@Override
+	public void appendWriteExpression(
+			String writeExpression,
+			@Nullable Size size,
+			SqlAppender appender,
+			Dialect dialect) {
+		if ( nativeSupport ) {
+			appender.append( "vector(" );
+			appender.append( writeExpression );
+			appender.append( ',' );
+			appender.append( getVectorParameters( size ) );
+			appender.append( ')' );
+		}
+		else {
+			appender.append( writeExpression );
+		}
+	}
+
+	String getVectorParameters(@Nullable Size size) {
 		assert size != null;
 		final int length = size.getArrayLength() != null ? size.getArrayLength() : size.getLength() != null ? size.getLength().intValue() : 0;
 		return length + "," + switch ( getElementJdbcType().getDefaultSqlTypeCode() ) {

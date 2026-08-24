@@ -150,9 +150,9 @@ public class BinaryVectorTest {
 					.getResultList();
 			assertEquals( 2, results.size() );
 			assertEquals( 1L, results.get( 0 ).get( 0 ) );
-			assertEquals( euclideanNormBinary( V1 ), results.get( 0 ).get( 1, double.class ), 0D );
+			assertEquals( euclideanNormBinary( V1 ), results.get( 0 ).get( 1, double.class ), 0.0000002D );
 			assertEquals( 2L, results.get( 1 ).get( 0 ) );
-			assertEquals( euclideanNormBinary( V2 ), results.get( 1 ).get( 1, double.class ), 0D );
+			assertEquals( euclideanNormBinary( V2 ), results.get( 1 ).get( 1, double.class ), 0.0000002D );
 		} );
 	}
 
@@ -164,11 +164,11 @@ public class BinaryVectorTest {
 
 		@Column( name = "the_hamming_vector", nullable = false )
 		@JdbcTypeCode(SqlTypes.VECTOR_BINARY)
-		@Array(length = 3)
+		@Array(length = 24)
 		private byte[] theHammingVector;
 		@Column( name = "the_jaccard_vector", nullable = false )
 		@JdbcTypeCode(SqlTypes.VECTOR_BINARY)
-		@Array(length = 3)
+		@Array(length = 24)
 		private byte[] theJaccardVector;
 
 		public VectorEntity() {

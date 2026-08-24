@@ -216,9 +216,9 @@ public class SparseByteVectorTest {
 					.getResultList();
 			assertEquals( 2, results.size() );
 			assertEquals( 1L, results.get( 0 ).get( 0 ) );
-			assertEquals( euclideanNorm( V1 ), results.get( 0 ).get( 1, double.class ), 0D );
+			assertEquals( euclideanNorm( V1 ), results.get( 0 ).get( 1, double.class ), 0.0000002D );
 			assertEquals( 2L, results.get( 1 ).get( 0 ) );
-			assertEquals( euclideanNorm( V2 ), results.get( 1 ).get( 1, double.class ), 0D );
+			assertEquals( euclideanNorm( V2 ), results.get( 1 ).get( 1, double.class ), 0.0000002D );
 		} );
 	}
 

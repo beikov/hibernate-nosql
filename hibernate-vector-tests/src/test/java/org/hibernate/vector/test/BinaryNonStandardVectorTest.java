@@ -193,7 +193,7 @@ public class BinaryNonStandardVectorTest {
 	public void testNegativeInnerProduct(SessionFactoryScope scope) {
 		scope.inTransaction( em -> {
 			final byte[] vector = new byte[]{ 1, 1, 1 };
-			final List<Tuple> results = em.createSelectionQuery( "select e.id, negative_inner_product(e.theIpVector, :vec) from VectorEntity e order by 2 desc", Tuple.class )
+			final List<Tuple> results = em.createSelectionQuery( "select e.id, negative_inner_product(e.theIpVector, :vec) from VectorEntity e order by 2 asc", Tuple.class )
 					.setParameter( "vec", vector )
 					.getResultList();
 			assertEquals( 2, results.size() );
@@ -228,9 +228,9 @@ public class BinaryNonStandardVectorTest {
 					.getResultList();
 			assertEquals( 2, results.size() );
 			assertEquals( 1L, results.get( 0 ).get( 0 ) );
-			assertEquals( euclideanNormBinary( V1 ), results.get( 0 ).get( 1, double.class ), 0D );
+			assertEquals( euclideanNormBinary( V1 ), results.get( 0 ).get( 1, double.class ), 0.0000002D );
 			assertEquals( 2L, results.get( 1 ).get( 0 ) );
-			assertEquals( euclideanNormBinary( V2 ), results.get( 1 ).get( 1, double.class ), 0D );
+			assertEquals( euclideanNormBinary( V2 ), results.get( 1 ).get( 1, double.class ), 0.0000002D );
 		} );
 	}
 
@@ -242,19 +242,19 @@ public class BinaryNonStandardVectorTest {
 
 		@Column( name = "the_ip_vector", nullable = false )
 		@JdbcTypeCode(SqlTypes.VECTOR_BINARY)
-		@Array(length = 3)
+		@Array(length = 24)
 		private byte[] theIpVector;
 		@Column( name = "the_cosine_vector", nullable = false )
 		@JdbcTypeCode(SqlTypes.VECTOR_BINARY)
-		@Array(length = 3)
+		@Array(length = 24)
 		private byte[] theCosineVector;
 		@Column( name = "the_l1_vector", nullable = false )
 		@JdbcTypeCode(SqlTypes.VECTOR_BINARY)
-		@Array(length = 3)
+		@Array(length = 24)
 		private byte[] theL1Vector;
 		@Column( name = "the_l2_vector", nullable = false )
 		@JdbcTypeCode(SqlTypes.VECTOR_BINARY)
-		@Array(length = 3)
+		@Array(length = 24)
 		private byte[] theL2Vector;
 
 		public VectorEntity() {

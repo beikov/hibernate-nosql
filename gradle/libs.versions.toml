@@ -27,6 +27,8 @@ h2 = "2.4.240"
 neo4j = "6.14.0"
 milvus2_6 = "2.6.23"
 milvus3_0 = "2.6.23"
+oracle = "23.26.3.0.0"
+pgsql = "42.7.13"
 
 #Buildscript
 forbiddenapis = "3.10"
@@ -112,6 +114,8 @@ jdbc-h2 = { group = "com.h2database", name = "h2", version.ref = "h2" }
 jdbc-neo4j = { group = "org.neo4j", name = "neo4j-jdbc-full-bundle", version.ref = "neo4j" }
 jdbc-milvus26 = { group = "io.milvus", name = "milvus-sdk-java-bulkwriter", version.ref = "milvus2_6" }
 jdbc-milvus30 = { group = "io.milvus", name = "milvus-sdk-java-bulkwriter", version.ref = "milvus3_0" }
+jdbc-oracle = { group = "com.oracle.database.jdbc", name = "ojdbc17", version.ref = "oracle" }
+jdbc-postgresql = { group = "org.postgresql", name = "postgresql", version.ref = "pgsql" }
 
 # Buildscript
 buildscript-forbiddenapis = { group = "de.thetaphi", name = "forbiddenapis", version.ref = "forbiddenapis" }

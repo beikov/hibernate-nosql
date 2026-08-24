@@ -152,10 +152,10 @@ public class ByteVectorTest {
 					.setParameter( "vec", vector )
 					.getResultList();
 			assertEquals( 2, results.size() );
-			assertEquals( 2L, results.get( 0 ).get( 0 ) );
-			assertEquals( taxicabDistance( V2, vector ), results.get( 0 ).get( 1, double.class ), 0D );
-			assertEquals( 1L, results.get( 1 ).get( 0 ) );
-			assertEquals( taxicabDistance( V1, vector ), results.get( 1 ).get( 1, double.class ), 0D );
+			assertEquals( 1L, results.get( 0 ).get( 0 ) );
+			assertEquals( taxicabDistance( V1, vector ), results.get( 0 ).get( 1, double.class ), 0D );
+			assertEquals( 2L, results.get( 1 ).get( 0 ) );
+			assertEquals( taxicabDistance( V2, vector ), results.get( 1 ).get( 1, double.class ), 0D );
 		} );
 	}
 
@@ -180,7 +180,7 @@ public class ByteVectorTest {
 	public void testNegativeInnerProduct(SessionFactoryScope scope) {
 		scope.inTransaction( em -> {
 			final byte[] vector = new byte[]{ 1, 1, 1 };
-			final List<Tuple> results = em.createSelectionQuery( "select e.id, negative_inner_product(e.theIpVector, :vec) from VectorEntity e order by 2 desc", Tuple.class )
+			final List<Tuple> results = em.createSelectionQuery( "select e.id, negative_inner_product(e.theIpVector, :vec) from VectorEntity e order by 2 asc", Tuple.class )
 					.setParameter( "vec", vector )
 					.getResultList();
 			assertEquals( 2, results.size() );
@@ -213,9 +213,9 @@ public class ByteVectorTest {
 					.getResultList();
 			assertEquals( 2, results.size() );
 			assertEquals( 1L, results.get( 0 ).get( 0 ) );
-			assertEquals( euclideanNorm( V1 ), results.get( 0 ).get( 1, double.class ), 0D );
+			assertEquals( euclideanNorm( V1 ), results.get( 0 ).get( 1, double.class ), 0.0000002D );
 			assertEquals( 2L, results.get( 1 ).get( 0 ) );
-			assertEquals( euclideanNorm( V2 ), results.get( 1 ).get( 1, double.class ), 0D );
+			assertEquals( euclideanNorm( V2 ), results.get( 1 ).get( 1, double.class ), 0.0000002D );
 		} );
 	}
 

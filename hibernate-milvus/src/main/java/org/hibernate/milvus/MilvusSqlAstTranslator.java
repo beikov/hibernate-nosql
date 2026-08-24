@@ -1164,11 +1164,11 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 		public SortDirection getDefaultOrder() {
 			return switch ( this ) {
-				case INNER_PRODUCT, NEGATIVE_INNER_PRODUCT -> SortDirection.DESCENDING;
+				case INNER_PRODUCT -> SortDirection.DESCENDING;
 				// Actually, Milvus returns cosine similarity in descending order,
 				// but we work with cosine distance in HQL, which has a better score the lower the value,
 				// hence ascending order. Note that the driver has to calculate the distance based on similarity later
-				case EUCLIDEAN, EUCLIDEAN_SQUARED, HAMMING, JACCARD, COSINE -> SortDirection.ASCENDING;
+				case EUCLIDEAN, EUCLIDEAN_SQUARED, HAMMING, JACCARD, COSINE, NEGATIVE_INNER_PRODUCT -> SortDirection.ASCENDING;
 			};
 		}
 
@@ -1725,7 +1725,9 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 	static boolean isVector(int jdbcTypeCode) {
 		return switch ( jdbcTypeCode ) {
-			case SqlTypes.VECTOR, SqlTypes.VECTOR_FLOAT32, SqlTypes.VECTOR_FLOAT64, SqlTypes.VECTOR_INT8 -> true;
+			case SqlTypes.VECTOR, SqlTypes.VECTOR_BINARY, SqlTypes.VECTOR_INT8, SqlTypes.VECTOR_FLOAT16,
+				SqlTypes.VECTOR_FLOAT32, SqlTypes.VECTOR_FLOAT64, SqlTypes.SPARSE_VECTOR_INT8,
+				SqlTypes.SPARSE_VECTOR_FLOAT32, SqlTypes.SPARSE_VECTOR_FLOAT64 -> true;
 			default -> false;
 		};
 	}
