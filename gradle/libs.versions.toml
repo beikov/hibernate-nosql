@@ -30,7 +30,7 @@ neo4j = "6.14.0"
 milvus2_6 = "2.6.27"
 milvus3_0 = "3.0.12"
 oracle = "23.26.3.0.0"
-pgsql = "42.7.13"
+pgsql = "42.7.14"
 
 #Buildscript
 forbiddenapis = "3.10"
