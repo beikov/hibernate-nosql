@@ -112,8 +112,8 @@ test-log4j2 = { group = "org.apache.logging.log4j", name = "log4j-core", version
 # JDBC
 jdbc-h2 = { group = "com.h2database", name = "h2", version.ref = "h2" }
 jdbc-neo4j = { group = "org.neo4j", name = "neo4j-jdbc-full-bundle", version.ref = "neo4j" }
-jdbc-milvus26 = { group = "io.milvus", name = "milvus-sdk-java-bulkwriter", version.ref = "milvus2_6" }
-jdbc-milvus30 = { group = "io.milvus", name = "milvus-sdk-java-bulkwriter", version.ref = "milvus3_0" }
+jdbc-milvus26 = { group = "io.milvus", name = "milvus-sdk-java", version.ref = "milvus2_6" }
+jdbc-milvus30 = { group = "io.milvus", name = "milvus-sdk-java", version.ref = "milvus3_0" }
 jdbc-oracle = { group = "com.oracle.database.jdbc", name = "ojdbc17", version.ref = "oracle" }
 jdbc-postgresql = { group = "org.postgresql", name = "postgresql", version.ref = "pgsql" }
 
