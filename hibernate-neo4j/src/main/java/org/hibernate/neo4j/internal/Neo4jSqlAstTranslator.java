@@ -592,7 +592,8 @@ public class Neo4jSqlAstTranslator<T extends JdbcOperation> extends AbstractSqlA
 		renderFromClauseJoiningDmlTargetReference( statement );
 	}
 
-	private void applySqlComment(String comment) {
+	protected void applySqlComment(String comment) {
+
 		if ( getSessionFactory().getSessionFactoryOptions().isCommentsEnabled() ) {
 			if ( comment != null ) {
 				appendSql( "/* " );
