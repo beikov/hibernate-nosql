@@ -23,14 +23,15 @@ public final class MilvusHelper {
 
 	public static DataType determineType(String sqlType) {
 		return switch ( sqlType ) {
-			case "string", "varchar" -> DataType.VarChar;
+			case "varchar" -> DataType.VarChar;
+			case "text" -> DataType.forNumber( 25 );
 			case "boolean" -> DataType.Bool;
 			case "tinyint" -> DataType.Int8;
 			case "smallint" -> DataType.Int16;
 			case "integer" -> DataType.Int32;
 			case "bigint" -> DataType.Int64;
-			case "float", "real" -> DataType.Float;
-			case "double precision" -> DataType.Double;
+			case "float" -> DataType.Float;
+			case "double" -> DataType.Double;
 			case "timestamptz" -> DataType.Timestamptz;
 			case "json" -> DataType.JSON;
 			case "binary_vector" -> DataType.BinaryVector;
@@ -44,6 +45,9 @@ public final class MilvusHelper {
 	}
 
 	public static String toSqlType(DataType dataType, @Nullable DataType elementType) {
+		if ( dataType.getCode() == 25 ) {
+			return "text";
+		}
 		return switch ( dataType ) {
 			case Array -> toSqlType( castNonNull( elementType ) , null ) + " array";
 			case VarChar -> "varchar";
@@ -54,7 +58,7 @@ public final class MilvusHelper {
 			case Int64 -> "bigint";
 			case Float -> "float";
 			case Timestamptz -> "timestamptz";
-			case Double -> "double precision";
+			case Double -> "double";
 			case JSON -> "json";
 			case BinaryVector -> "binary_vector";
 			case Int8Vector -> "byte_vector";
@@ -67,6 +71,9 @@ public final class MilvusHelper {
 	}
 
 	public static String toJavaType(DataType dataType) {
+		if ( dataType.getCode() == 25 ) {
+			return "text";
+		}
 		return switch ( dataType ) {
 			case Array -> "java.sql.Array";
 			case VarChar -> "java.lang.String";
@@ -85,6 +92,9 @@ public final class MilvusHelper {
 	}
 
 	public static int toJdbcType(DataType dataType) {
+		if ( dataType.getCode() == 25 ) {
+			return Types.VARCHAR;
+		}
 		return switch ( dataType ) {
 			case Array, FloatVector, SparseFloatVector -> Types.ARRAY;
 			case VarChar -> Types.VARCHAR;
@@ -93,7 +103,7 @@ public final class MilvusHelper {
 			case Int16 -> Types.SMALLINT;
 			case Int32 -> Types.INTEGER;
 			case Int64 -> Types.BIGINT;
-			case Float -> Types.FLOAT;
+			case Float -> Types.REAL;
 			case Double -> Types.DOUBLE;
 			case JSON -> Types.OTHER;
 			case Int8Vector, BinaryVector, Float16Vector, BFloat16Vector -> Types.BINARY;

@@ -5,8 +5,7 @@
 package org.hibernate.nosql;
 
 import org.hibernate.internal.build.AllowSysOut;
-
-import static org.hibernate.internal.CoreMessageLogger.CORE_LOGGER;
+import org.hibernate.nosql.internal.NoSQLMessageLogger;
 
 /**
  * Information about the version of Hibernate NoSQL.
@@ -38,7 +37,7 @@ public final class Version {
 	 * Logs the Hibernate NoSQL version (using {@link #getVersionString()}) to the logging system.
 	 */
 	public static void logVersion() {
-		CORE_LOGGER.version( getVersionString() );
+		NoSQLMessageLogger.INSTANCE.version( getVersionString() );
 	}
 
 	/**

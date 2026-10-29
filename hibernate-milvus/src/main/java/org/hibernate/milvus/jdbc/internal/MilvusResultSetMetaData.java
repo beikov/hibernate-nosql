@@ -94,6 +94,7 @@ public class MilvusResultSetMetaData implements ResultSetMetaData {
 			case Double -> 25;
 			case Timestamptz -> 30;
 			case None, Struct, Geometry, JSON, BinaryVector, Int8Vector, FloatVector, BFloat16Vector, Float16Vector, SparseFloatVector -> Integer.MAX_VALUE;
+			default -> Integer.MAX_VALUE;
 		};
 	}
 
@@ -122,6 +123,7 @@ public class MilvusResultSetMetaData implements ResultSetMetaData {
 			case Double -> 17;
 			case Timestamptz -> 0;
 			case None, Array, JSON, Struct, Geometry -> Integer.MAX_VALUE;
+			default -> Integer.MAX_VALUE;
 		};
 	}
 

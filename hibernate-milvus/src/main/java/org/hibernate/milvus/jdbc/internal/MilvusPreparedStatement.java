@@ -257,19 +257,19 @@ public class MilvusPreparedStatement extends MilvusStatement implements Prepared
 	@Override
 	public void setDate(int parameterIndex, Date x, Calendar cal) throws SQLException {
 		checkIndex( parameterIndex );
-		params[parameterIndex - 1] = x;
+		params[parameterIndex - 1] = new DateWithCalendar( x, cal );
 	}
 
 	@Override
 	public void setTime(int parameterIndex, Time x, Calendar cal) throws SQLException {
 		checkIndex( parameterIndex );
-		params[parameterIndex - 1] = x;
+		params[parameterIndex - 1] = new DateWithCalendar( x, cal );
 	}
 
 	@Override
 	public void setTimestamp(int parameterIndex, Timestamp x, Calendar cal) throws SQLException {
 		checkIndex( parameterIndex );
-		params[parameterIndex - 1] = x;
+		params[parameterIndex - 1] = new DateWithCalendar( x, cal );
 	}
 
 	@Override

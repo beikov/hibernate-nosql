@@ -6,12 +6,16 @@ package org.hibernate.milvus.jdbc.internal;
 
 import com.google.gson.JsonNull;
 import com.google.gson.JsonPrimitive;
+import com.google.protobuf.Internal;
+import com.google.protobuf.LazyStringList;
 import io.milvus.v2.service.vector.request.data.BinaryVec;
 import io.milvus.v2.service.vector.request.data.Float16Vec;
 import io.milvus.v2.service.vector.request.data.Int8Vec;
 import io.milvus.v2.service.vector.request.data.SparseFloatVec;
 import jakarta.annotation.Nullable;
 import org.hibernate.internal.build.AllowReflection;
+import org.hibernate.type.descriptor.java.PrimitiveByteArrayJavaType;
+import shaded.parquet.it.unimi.dsi.fastutil.booleans.BooleanList;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -554,6 +558,9 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 		else if ( value instanceof byte[] bytes ) {
 			return bytes;
 		}
+		else if ( value instanceof String string ) {
+			return PrimitiveByteArrayJavaType.INSTANCE.fromString( string );
+		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
 		}
@@ -712,6 +719,9 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 		else if ( value instanceof byte[] bytes ) {
 			return new ByteArrayBlob( bytes );
 		}
+		else if ( value instanceof String string ) {
+			return new ByteArrayBlob( PrimitiveByteArrayJavaType.INSTANCE.fromString( string ) );
+		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
 		}
@@ -744,6 +754,29 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 					value
 			);
 		}
+		else if ( value instanceof Internal.DoubleList doubleList ) {
+			return new MilvusArray( "double", doubleList.toArray() );
+		}
+		else if ( value instanceof Internal.IntList intList ) {
+			return new MilvusArray( "integer", intList.toArray() );
+		}
+		else if ( value instanceof Internal.FloatList floatList ) {
+			return new MilvusArray( "float", floatList.toArray() );
+		}
+		else if ( value instanceof Internal.LongList longList ) {
+			return new MilvusArray( "bigint", longList.toArray() );
+		}
+		else if ( value instanceof BooleanList booleanList ) {
+			return new MilvusArray( "boolean", booleanList.toArray() );
+		}
+		else if ( value instanceof LazyStringList lazyStringList ) {
+			return new MilvusArray( "varchar", lazyStringList.toArray() );
+		}
+		else if ( value instanceof List<?> list ) {
+			final Object[] array = list.toArray();
+			final String baseTypeName = determineBaseTypeName( array );
+			return new MilvusArray( baseTypeName, array );
+		}
 		else {
 			throw new SQLException( "Unsupported type: " + value.getClass().getName() );
 		}
@@ -755,6 +788,27 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 				if ( element != null ) {
 					if ( element instanceof String ) {
 						return "varchar";
+					}
+					else if ( element instanceof Boolean ) {
+						return "boolean";
+					}
+					else if ( element instanceof Long ) {
+						return "bigint";
+					}
+					else if ( element instanceof Integer ) {
+						return "integer";
+					}
+					else if ( element instanceof Short ) {
+						return "smallint";
+					}
+					else if ( element instanceof Byte ) {
+						return "tinyint";
+					}
+					else if ( element instanceof Double ) {
+						return "double";
+					}
+					else if ( element instanceof Float ) {
+						return "float";
 					}
 					else {
 						throw new UnsupportedOperationException( "Unsupported array element type: " + element.getClass().getName() );
@@ -932,7 +986,7 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 				else if ( type == Time.class ) {
 					final ZonedDateTime zonedDateTime = parseTimestamp( string, cal );
 					//noinspection unchecked
-					return (T) Time.valueOf( zonedDateTime.toLocalTime() );
+					return (T) new Time( zonedDateTime.toEpochSecond() * 1000L + zonedDateTime.getNano() / 1000000 );
 				}
 				else if ( type == Timestamp.class ) {
 					final ZonedDateTime zonedDateTime = parseTimestamp( string, cal );
