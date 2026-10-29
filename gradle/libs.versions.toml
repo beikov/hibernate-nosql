@@ -4,6 +4,8 @@
 hibernate = "7.4.5.Final"
 jbossLoggingTool = "3.0.4.Final"
 jandex = "3.6.0"
+jacksonAnnotations = "2.22"
+jackson = "2.22.4"
 
 # Jakarta Libs
 annotation = "3.0.0"
@@ -25,8 +27,8 @@ log4j = "2.26.1"
 # JDBC Libs
 h2 = "2.4.240"
 neo4j = "6.14.0"
-milvus2_6 = "2.6.23"
-milvus3_0 = "3.0.8"
+milvus2_6 = "2.6.27"
+milvus3_0 = "3.0.12"
 oracle = "23.26.3.0.0"
 pgsql = "42.7.13"
 
@@ -79,6 +81,9 @@ jandex = { group = "io.smallrye", name = "jandex", version.ref = "jandex" }
 logging = { group = "org.jboss.logging", name = "jboss-logging" }
 loggingAnnotations = { group = "org.jboss.logging", name = "jboss-logging-annotations", version.ref = "jbossLoggingTool" }
 loggingProcessor = { group = "org.jboss.logging", name = "jboss-logging-processor", version.ref = "jbossLoggingTool" }
+jackson-annotations = { group = "com.fasterxml.jackson.core", name = "jackson-annotations", version.ref = "jacksonAnnotations" }
+jackson-core = { group = "com.fasterxml.jackson.core", name = "jackson-core", version.ref = "jackson" }
+jackson-databind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson" }
 
 # Compilation (static checks)
 compilation-jetbrainsAnnotations = { group = "org.jetbrains", name = "annotations", version.ref = "jetbrainsAnnotations" }
