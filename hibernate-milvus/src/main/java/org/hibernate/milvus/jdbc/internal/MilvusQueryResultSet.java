@@ -5,7 +5,7 @@
 package org.hibernate.milvus.jdbc.internal;
 
 import io.milvus.v2.service.vector.response.QueryResp;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import jakarta.annotation.Nullable;
 
 import java.util.List;
 

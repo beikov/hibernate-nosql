@@ -7,7 +7,7 @@ package org.hibernate.milvus.jdbc.internal;
 import io.milvus.v2.service.collection.request.CreateCollectionReq;
 import io.milvus.v2.service.collection.request.DescribeCollectionReq;
 import io.milvus.v2.service.collection.response.DescribeCollectionResp;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import jakarta.annotation.Nullable;
 
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;

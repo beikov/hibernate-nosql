@@ -15,7 +15,6 @@ import io.milvus.v2.service.vector.request.data.SparseFloatVec;
 import jakarta.annotation.Nullable;
 import org.hibernate.internal.build.AllowReflection;
 import org.hibernate.type.descriptor.java.PrimitiveByteArrayJavaType;
-import shaded.parquet.it.unimi.dsi.fastutil.booleans.BooleanList;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -766,7 +765,7 @@ public abstract class AbstractResultSet<T extends Statement> implements ResultSe
 		else if ( value instanceof Internal.LongList longList ) {
 			return new MilvusArray( "bigint", longList.toArray() );
 		}
-		else if ( value instanceof BooleanList booleanList ) {
+		else if ( value instanceof Internal.BooleanList booleanList ) {
 			return new MilvusArray( "boolean", booleanList.toArray() );
 		}
 		else if ( value instanceof LazyStringList lazyStringList ) {
