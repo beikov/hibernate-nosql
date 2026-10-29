@@ -5,8 +5,8 @@
 package org.hibernate.milvus;
 
 import io.milvus.v2.common.DataType;
+import jakarta.annotation.Nullable;
 import jakarta.persistence.GenerationType;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.hibernate.LockOptions;
 import org.hibernate.boot.model.FunctionContributions;
 import org.hibernate.boot.model.TypeContributions;

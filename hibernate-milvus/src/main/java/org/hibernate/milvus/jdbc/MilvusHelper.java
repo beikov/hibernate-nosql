@@ -5,7 +5,7 @@
 package org.hibernate.milvus.jdbc;
 
 import io.milvus.v2.common.DataType;
-import org.checkerframework.checker.nullness.qual.Nullable;
+import jakarta.annotation.Nullable;
 
 import java.sql.Types;
 

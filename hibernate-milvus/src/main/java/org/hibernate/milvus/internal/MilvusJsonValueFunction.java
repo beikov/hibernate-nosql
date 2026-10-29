@@ -4,7 +4,7 @@
  */
 package org.hibernate.milvus.internal;
 
-import org.checkerframework.checker.nullness.qual.Nullable;
+import jakarta.annotation.Nullable;
 import org.hibernate.QueryException;
 import org.hibernate.dialect.function.json.JsonPathHelper;
 import org.hibernate.dialect.function.json.JsonValueFunction;
