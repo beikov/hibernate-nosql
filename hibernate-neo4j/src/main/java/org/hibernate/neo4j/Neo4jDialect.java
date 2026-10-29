@@ -4,16 +4,46 @@
  */
 package org.hibernate.neo4j;
 
+import jakarta.persistence.TemporalType;
+import jakarta.persistence.Timeout;
+import org.hibernate.LockOptions;
 import org.hibernate.boot.model.FunctionContributions;
 import org.hibernate.boot.model.TypeContributions;
 import org.hibernate.dialect.DatabaseVersion;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.DmlTargetColumnQualifierSupport;
+import org.hibernate.dialect.RowLockStrategy;
+import org.hibernate.dialect.SelectItemReferenceStrategy;
 import org.hibernate.dialect.function.CommonFunctionFactory;
+import org.hibernate.dialect.lock.PessimisticLockStyle;
+import org.hibernate.dialect.lock.internal.LockingSupportSimple;
+import org.hibernate.dialect.lock.spi.ConnectionLockTimeoutStrategy;
+import org.hibernate.dialect.lock.spi.LockTimeoutType;
+import org.hibernate.dialect.lock.spi.LockingSupport;
+import org.hibernate.dialect.lock.spi.OuterJoinLockingType;
 import org.hibernate.dialect.unique.UniqueDelegate;
 import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
+import org.hibernate.exception.LockTimeoutException;
+import org.hibernate.exception.spi.SQLExceptionConversionDelegate;
+import org.hibernate.internal.util.StringHelper;
 import org.hibernate.mapping.Table;
+import org.hibernate.neo4j.internal.InetAsVarcharJdbcType;
+import org.hibernate.neo4j.internal.IsoDateTimeUtils;
+import org.hibernate.neo4j.internal.Neo4jArrayJdbcType;
+import org.hibernate.neo4j.internal.Neo4jDecimalJdbcType;
+import org.hibernate.neo4j.internal.Neo4jDurationJdbcType;
+import org.hibernate.neo4j.internal.Neo4jNumericJdbcType;
+import org.hibernate.neo4j.internal.Neo4jServerConfiguration;
+import org.hibernate.neo4j.internal.Neo4jSqlAstTranslator;
+import org.hibernate.neo4j.internal.Neo4jTableExporter;
+import org.hibernate.neo4j.internal.Neo4jUniqueDelegate;
+import org.hibernate.neo4j.internal.Neo4jVectorDdlType;
+import org.hibernate.neo4j.internal.Neo4jVectorDistanceFunction;
+import org.hibernate.neo4j.internal.Neo4jVectorFunction;
+import org.hibernate.neo4j.internal.Neo4jVectorJdbcType;
+import org.hibernate.neo4j.internal.TimeUtcAsOffsetTimeJdbcType;
+import org.hibernate.neo4j.internal.UuidAsVarcharJdbcType;
 import org.hibernate.query.sqm.CastType;
 import org.hibernate.query.sqm.function.SqmFunctionRegistry;
 import org.hibernate.query.sqm.produce.function.FunctionParameterType;
@@ -35,12 +65,25 @@ import org.hibernate.type.StandardBasicTypes;
 import org.hibernate.type.descriptor.java.JavaType;
 import org.hibernate.type.descriptor.java.spi.JavaTypeRegistry;
 import org.hibernate.type.descriptor.jdbc.ArrayJdbcType;
+import org.hibernate.type.descriptor.jdbc.BlobJdbcType;
+import org.hibernate.type.descriptor.jdbc.ClobJdbcType;
+import org.hibernate.type.descriptor.jdbc.NClobJdbcType;
 import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
 import org.hibernate.type.descriptor.sql.internal.DdlTypeImpl;
 import org.hibernate.type.descriptor.sql.spi.DdlTypeRegistry;
 import org.hibernate.type.spi.TypeConfiguration;
 import org.hibernate.vector.internal.VectorFunctionFactory;
+import org.neo4j.jdbc.internal.shaded.bolt.exception.BoltFailureException;
 
+import java.sql.SQLException;
+import java.sql.Types;
+import java.time.temporal.TemporalAccessor;
+import java.util.Calendar;
+import java.util.Date;
+import java.util.TimeZone;
+import java.util.UUID;
+
+import static org.hibernate.internal.util.JdbcExceptionHelper.extractSqlState;
 import static org.hibernate.type.SqlTypes.BIGINT;
 import static org.hibernate.type.SqlTypes.BOOLEAN;
 import static org.hibernate.type.SqlTypes.CHAR;
@@ -71,6 +114,9 @@ import static org.hibernate.type.SqlTypes.VECTOR;
 import static org.hibernate.type.SqlTypes.VECTOR_FLOAT32;
 import static org.hibernate.type.SqlTypes.VECTOR_FLOAT64;
 import static org.hibernate.type.SqlTypes.VECTOR_INT8;
+import static org.hibernate.type.descriptor.DateTimeUtils.appendAsDate;
+import static org.hibernate.type.descriptor.DateTimeUtils.appendAsLocalTime;
+import static org.hibernate.type.descriptor.DateTimeUtils.appendAsTime;
 
 /**
  * An SQL dialect for Neo4j.
@@ -78,6 +124,13 @@ import static org.hibernate.type.SqlTypes.VECTOR_INT8;
 public class Neo4jDialect extends Dialect {
 
 	private static final DatabaseVersion MINIMUM_VERSION = DatabaseVersion.make( 5, 26 );
+	private static final LockingSupport LOCKING_SUPPORT = new LockingSupportSimple(
+			PessimisticLockStyle.CLAUSE,
+			RowLockStrategy.TABLE,
+			LockTimeoutType.NONE,
+			OuterJoinLockingType.FULL,
+			ConnectionLockTimeoutStrategy.NONE
+	);
 
 	private final UniqueDelegate uniqueDelegate = new Neo4jUniqueDelegate( this );
 
@@ -113,6 +166,11 @@ public class Neo4jDialect extends Dialect {
 		final JdbcTypeRegistry jdbcTypeRegistry = typeConfiguration.getJdbcTypeRegistry();
 		final DdlTypeRegistry ddlTypeRegistry = typeConfiguration.getDdlTypeRegistry();
 		final BasicTypeRegistry basicTypeRegistry = typeConfiguration.getBasicTypeRegistry();
+
+		// No BLOB/CLOB/NCLOB support on the Neo4j JDBC driver
+		jdbcTypeRegistry.addDescriptor( Types.BLOB, BlobJdbcType.MATERIALIZED );
+		jdbcTypeRegistry.addDescriptor( Types.CLOB, ClobJdbcType.MATERIALIZED );
+		jdbcTypeRegistry.addDescriptor( Types.NCLOB, NClobJdbcType.MATERIALIZED );
 
 		// generic array type constructor
 		jdbcTypeRegistry.addTypeConstructor( Neo4jArrayJdbcType.Neo4jArrayJdbcTypeConstructor.INSTANCE );
@@ -187,6 +245,15 @@ public class Neo4jDialect extends Dialect {
 		}
 
 		// todo neo4j : json type support ?
+
+		jdbcTypeRegistry.addDescriptor( TimeUtcAsOffsetTimeJdbcType.INSTANCE );
+		jdbcTypeRegistry.addDescriptor( Neo4jDecimalJdbcType.INSTANCE );
+		jdbcTypeRegistry.addDescriptor( Neo4jNumericJdbcType.INSTANCE );
+		jdbcTypeRegistry.addDescriptor( Neo4jDurationJdbcType.INSTANCE );
+		// Since arrays of (byte) arrays are not supported on Neo4j...
+		// Encode UUID and INET as Varchar to allow handling array
+		jdbcTypeRegistry.addDescriptor( UuidAsVarcharJdbcType.INSTANCE );
+		jdbcTypeRegistry.addDescriptor( InetAsVarcharJdbcType.INSTANCE );
 	}
 
 	public boolean isEnterpriseEdition() {
@@ -327,6 +394,58 @@ public class Neo4jDialect extends Dialect {
 	}
 
 	@Override
+	public LockingSupport getLockingSupport() {
+		return LOCKING_SUPPORT;
+	}
+
+	@Override
+	public SelectItemReferenceStrategy getGroupBySelectItemReferenceStrategy() {
+		return SelectItemReferenceStrategy.ALIAS;
+	}
+
+	@Override
+	public String getForUpdateString() {
+		return "";
+	}
+
+	@Override
+	public String getReadLockString(String aliases, Timeout timeout) {
+		return getWriteLockString( aliases, timeout );
+	}
+
+	@Override
+	public String getWriteLockString(String aliases, Timeout timeout) {
+		return getForUpdateString( aliases );
+	}
+
+	@Override
+	public String getForUpdateString(String aliases, LockOptions lockOptions) {
+		return switch ( lockOptions.getLockMode() ) {
+			case READ, PESSIMISTIC_READ, WRITE, PESSIMISTIC_WRITE, UPGRADE_SKIPLOCKED, UPGRADE_NOWAIT -> getForUpdateString( aliases );
+			default -> "";
+		};
+	}
+
+	@Override
+	public String getForUpdateString(String aliases) {
+		final String[] aliasesArray = StringHelper.split( ",", aliases );
+		if ( aliasesArray.length == 0 ) {
+			return "";
+		}
+		else {
+			final StringBuilder sb = new StringBuilder();
+			for ( String alias : aliasesArray ) {
+				sb.append( " set " );
+				sb.append( alias );
+				sb.append( "._dummy_=true remove " );
+				sb.append( alias );
+				sb.append( "._dummy_" );
+			}
+			return sb.toString();
+		}
+	}
+
+	@Override
 	public SqlAstTranslatorFactory getSqlAstTranslatorFactory() {
 		return new StandardSqlAstTranslatorFactory() {
 			@Override
@@ -335,6 +454,25 @@ public class Neo4jDialect extends Dialect {
 				return new Neo4jSqlAstTranslator<>( sessionFactory, statement );
 			}
 		};
+	}
+
+	@Override
+	public SQLExceptionConversionDelegate buildSQLExceptionConversionDelegate() {
+		return (sqlException, message, sql) -> {
+			if ( sqlException.getCause() instanceof BoltFailureException boltException ) {
+				switch ( boltException.code() ) {
+					case "Neo.TransientError.Transaction.LockAcquisitionTimeout":
+						return new LockTimeoutException( message, sqlException, sql );
+				}
+			}
+
+			return null;
+		};
+	}
+
+	@Override
+	public boolean causesRollback(SQLException sqlException) {
+		return "25N16".equals( extractSqlState( sqlException ) );
 	}
 
 	@Override
@@ -481,5 +619,99 @@ public class Neo4jDialect extends Dialect {
 						"Unsupported cast from " + from + " to " + to
 				);
 		};
+	}
+
+	@Override
+	public void appendBinaryLiteral(SqlAppender appender, byte[] bytes) {
+		throw new UnsupportedOperationException("Neo4j does not support binary literals");
+	}
+
+	@Override
+	public void appendUUIDLiteral(SqlAppender appender, UUID literal) {
+		throw new UnsupportedOperationException("Neo4j does not support UUID literals");
+	}
+
+	@Override
+	public void appendDateTimeLiteral(
+			SqlAppender appender,
+			TemporalAccessor temporalAccessor,
+			@SuppressWarnings("deprecation")
+			TemporalType precision,
+			TimeZone jdbcTimeZone) {
+		switch ( precision ) {
+			case DATE:
+				appender.appendSql( "date(\"" );
+				appendAsDate( appender, temporalAccessor );
+				appender.appendSql( "\")" );
+				break;
+			case TIME:
+				appender.appendSql( "local_time(\"" );
+				appendAsTime( appender, temporalAccessor, supportsTemporalLiteralOffset(), jdbcTimeZone );
+				appender.appendSql( "\")" );
+				break;
+			case TIMESTAMP:
+				appender.appendSql( "datetime(\"" );
+				IsoDateTimeUtils.appendAsTimestampWithNanos( appender, temporalAccessor, supportsTemporalLiteralOffset(), jdbcTimeZone );
+				appender.appendSql( "\")" );
+				break;
+			default:
+				throw new IllegalArgumentException();
+		}
+	}
+
+	@Override
+	public void appendDateTimeLiteral(
+			SqlAppender appender,
+			Date date,
+			@SuppressWarnings("deprecation")
+			TemporalType precision,
+			TimeZone jdbcTimeZone) {
+		switch ( precision ) {
+			case DATE:
+				appender.appendSql( "date(\"" );
+				appendAsDate( appender, date );
+				appender.appendSql( "\")" );
+				break;
+			case TIME:
+				appender.appendSql( "local_time(\"" );
+				appendAsLocalTime( appender, date );
+				appender.appendSql( "\")" );
+				break;
+			case TIMESTAMP:
+				appender.appendSql( "datetime(\"" );
+				IsoDateTimeUtils.appendAsTimestampWithNanos( appender, date, jdbcTimeZone );
+				appender.appendSql( "\")" );
+				break;
+			default:
+				throw new IllegalArgumentException();
+		}
+	}
+
+	@Override
+	public void appendDateTimeLiteral(
+			SqlAppender appender,
+			Calendar calendar,
+			@SuppressWarnings("deprecation")
+			TemporalType precision,
+			TimeZone jdbcTimeZone) {
+		switch ( precision ) {
+			case DATE:
+				appender.appendSql( "date(\"" );
+				appendAsDate( appender, calendar );
+				appender.appendSql( "\")" );
+				break;
+			case TIME:
+				appender.appendSql( "local_time(\"" );
+				appendAsLocalTime( appender, calendar );
+				appender.appendSql( "\")" );
+				break;
+			case TIMESTAMP:
+				appender.appendSql( "datetime(\"" );
+				IsoDateTimeUtils.appendAsTimestampWithMillis( appender, calendar, jdbcTimeZone );
+				appender.appendSql( "\")" );
+				break;
+			default:
+				throw new IllegalArgumentException();
+		}
 	}
 }

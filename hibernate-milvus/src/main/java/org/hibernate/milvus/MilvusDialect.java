@@ -4,10 +4,13 @@
  */
 package org.hibernate.milvus;
 
+import io.milvus.v2.common.DataType;
+import jakarta.persistence.GenerationType;
 import org.checkerframework.checker.nullness.qual.Nullable;
 import org.hibernate.LockOptions;
 import org.hibernate.boot.model.FunctionContributions;
 import org.hibernate.boot.model.TypeContributions;
+import org.hibernate.cfg.FetchSettings;
 import org.hibernate.dialect.DatabaseVersion;
 import org.hibernate.dialect.Dialect;
 import org.hibernate.dialect.SimpleDatabaseVersion;
@@ -15,14 +18,40 @@ import org.hibernate.dialect.TimeZoneSupport;
 import org.hibernate.dialect.function.CommonFunctionFactory;
 import org.hibernate.dialect.function.array.ArrayArgumentValidator;
 import org.hibernate.dialect.function.array.ArrayConstructorFunction;
+import org.hibernate.dialect.identity.IdentityColumnSupport;
+import org.hibernate.dialect.lock.internal.NoLockingSupport;
+import org.hibernate.dialect.lock.spi.LockingSupport;
 import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
 import org.hibernate.engine.jdbc.env.spi.IdentifierCaseStrategy;
 import org.hibernate.engine.jdbc.env.spi.IdentifierHelper;
 import org.hibernate.engine.jdbc.env.spi.IdentifierHelperBuilder;
 import org.hibernate.engine.spi.SessionFactoryImplementor;
 import org.hibernate.internal.util.StringHelper;
+import org.hibernate.mapping.ForeignKey;
 import org.hibernate.mapping.Index;
 import org.hibernate.mapping.Table;
+import org.hibernate.milvus.internal.MilvusArrayContainsFunction;
+import org.hibernate.milvus.internal.MilvusArrayGetFunction;
+import org.hibernate.milvus.internal.MilvusArrayIncludesFunction;
+import org.hibernate.milvus.internal.MilvusArrayIntersectsFunction;
+import org.hibernate.milvus.internal.MilvusArrayJdbcType;
+import org.hibernate.milvus.internal.MilvusBinaryVectorJdbcType;
+import org.hibernate.milvus.internal.MilvusByteVectorJdbcType;
+import org.hibernate.milvus.internal.MilvusFloat16VectorJdbcType;
+import org.hibernate.milvus.internal.MilvusFloat32VectorJdbcType;
+import org.hibernate.milvus.internal.MilvusForeignKeyExporter;
+import org.hibernate.milvus.internal.MilvusIdentityColumnSupport;
+import org.hibernate.milvus.internal.MilvusIndexExporter;
+import org.hibernate.milvus.internal.MilvusJsonArrayFunction;
+import org.hibernate.milvus.internal.MilvusJsonExistsFunction;
+import org.hibernate.milvus.internal.MilvusJsonJdbcType;
+import org.hibernate.milvus.internal.MilvusJsonQueryFunction;
+import org.hibernate.milvus.internal.MilvusJsonValueFunction;
+import org.hibernate.milvus.internal.MilvusSparseFloat32VectorJdbcTypeConstructor;
+import org.hibernate.milvus.internal.MilvusSqlAstTranslator;
+import org.hibernate.milvus.internal.MilvusTableExporter;
+import org.hibernate.milvus.internal.TimeUtcAsJdbcTimeJdbcType;
+import org.hibernate.milvus.internal.UuidAsVarcharJdbcType;
 import org.hibernate.milvus.jdbc.MilvusJsonHelper;
 import org.hibernate.milvus.jdbc.MilvusTruncateCollection;
 import org.hibernate.query.sqm.function.SqmFunctionRegistry;
@@ -56,6 +85,7 @@ import org.hibernate.vector.internal.VectorArgumentValidator;
 
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
+import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -87,6 +117,8 @@ public class MilvusDialect extends Dialect {
 	private static final Pattern VERSION_PATTERN = Pattern.compile( "\\d+\\.\\d+(\\.\\d+)?-.+" );
 	private static final DatabaseVersion MINIMUM_VERSION = DatabaseVersion.make( 2, 5 );
 
+	private final boolean supportsText;
+
 	@SuppressWarnings("unused")
 	public MilvusDialect() {
 		this( MINIMUM_VERSION );
@@ -99,6 +131,14 @@ public class MilvusDialect extends Dialect {
 
 	public MilvusDialect(DatabaseVersion version) {
 		super( version );
+		boolean supportsText = true;
+		try {
+			DataType.valueOf( "Text" );
+		}
+		catch (IllegalArgumentException e) {
+			supportsText = false;
+		}
+		this.supportsText = supportsText;
 	}
 
 	@Override
@@ -143,6 +183,12 @@ public class MilvusDialect extends Dialect {
 			databaseVersion = MINIMUM_VERSION;
 		}
 		return databaseVersion;
+	}
+
+	@Override
+	protected void initDefaultProperties() {
+		// This essentially disables joins in regular find queries
+		getDefaultProperties().setProperty( FetchSettings.MAX_FETCH_DEPTH, "-1" );
 	}
 
 	@Override
@@ -253,6 +299,12 @@ public class MilvusDialect extends Dialect {
 				new DdlTypeImpl( JSON, "json", this )
 		);
 		// todo (milvus): geometry type
+
+		// todo: fix upstream, this is just temporary
+		jdbcTypeRegistry.addDescriptor( TimeUtcAsJdbcTimeJdbcType.INSTANCE );
+
+		// Since we represent binary data as hex coded string, we have to properly handle it when reading from JDBC
+		jdbcTypeRegistry.addTypeConstructor( MilvusArrayJdbcType.MilvusArrayJdbcTypeConstructor.INSTANCE );
 	}
 
 	@Override
@@ -360,6 +412,11 @@ public class MilvusDialect extends Dialect {
 	}
 
 	@Override
+	public int getMaxVarbinaryLength() {
+		return getMaxVarcharLength();
+	}
+
+	@Override
 	public boolean supportsStandardArrays() {
 		return true;
 	}
@@ -367,13 +424,23 @@ public class MilvusDialect extends Dialect {
 	@Override
 	protected String columnType(int sqlTypeCode) {
 		return switch ( sqlTypeCode ) {
-			case FLOAT, REAL -> "float";
-			case CHAR,VARCHAR, NCHAR, NVARCHAR, CLOB, NCLOB -> "varchar";
+			case REAL -> "float";
+			case FLOAT, DOUBLE -> "double";
+			case CHAR, VARCHAR, NCHAR, NVARCHAR -> "varchar";
+			case CLOB, NCLOB -> supportsText ? "text" : "varchar";
 			// Milvus has no support for arbitrary precision numeric types
 			case SqlTypes.NUMERIC, DECIMAL -> columnType( DOUBLE );
 			case DATE, TIME, TIMESTAMP, TIMESTAMP_UTC, TIME_WITH_TIMEZONE, TIMESTAMP_WITH_TIMEZONE -> "timestamptz";
+			// Milvus has no binary types, so use varchar instead
+			case BINARY, VARBINARY -> "varchar";
+			case BLOB -> supportsText ? "text" : "varchar";
 			default -> super.columnType( sqlTypeCode );
 		};
+	}
+
+	@Override
+	public String getArrayTypeName(String javaElementTypeName, String elementTypeName, Integer maxLength) {
+		return elementTypeName + " array";
 	}
 
 	@Override
@@ -387,6 +454,16 @@ public class MilvusDialect extends Dialect {
 	}
 
 	@Override
+	public void appendBinaryLiteral(SqlAppender appender, byte[] bytes) {
+		throw new UnsupportedOperationException("Milvus does not support binary literals");
+	}
+
+	@Override
+	public void appendUUIDLiteral(SqlAppender appender, UUID literal) {
+		throw new UnsupportedOperationException("Milvus does not support UUID literals");
+	}
+
+	@Override
 	public Exporter<Table> getTableExporter() {
 		return MilvusTableExporter.INSTANCE;
 	}
@@ -394,6 +471,31 @@ public class MilvusDialect extends Dialect {
 	@Override
 	public Exporter<Index> getIndexExporter() {
 		return MilvusIndexExporter.INSTANCE;
+	}
+
+	@Override
+	public Exporter<ForeignKey> getForeignKeyExporter() {
+		return MilvusForeignKeyExporter.INSTANCE;
+	}
+
+	@Override
+	public IdentityColumnSupport getIdentityColumnSupport() {
+		return MilvusIdentityColumnSupport.INSTANCE;
+	}
+
+	@Override
+	public GenerationType getNativeValueGenerationStrategy() {
+		return GenerationType.IDENTITY;
+	}
+
+	@Override
+	public boolean supportsCascadeDelete() {
+		return false;
+	}
+
+	@Override
+	public LockingSupport getLockingSupport() {
+		return NoLockingSupport.NO_LOCKING_SUPPORT;
 	}
 
 	@Override

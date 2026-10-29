@@ -17,7 +17,7 @@ import org.hibernate.engine.query.spi.NativeQueryInterpreter;
 import org.hibernate.jpa.HibernateHints;
 import org.hibernate.milvus.MilvusDatabaseHints;
 import org.hibernate.milvus.MilvusDialect;
-import org.hibernate.milvus.MilvusNativeQueryInterpreter;
+import org.hibernate.milvus.internal.MilvusNativeQueryInterpreter;
 import org.hibernate.milvus.jdbc.MilvusJsonHelper;
 import org.hibernate.milvus.jdbc.MilvusNumberValue;
 import org.hibernate.milvus.jdbc.MilvusQuery;

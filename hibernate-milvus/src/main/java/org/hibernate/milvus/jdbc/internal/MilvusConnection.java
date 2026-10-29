@@ -61,8 +61,12 @@ import org.hibernate.milvus.jdbc.MilvusUpsert;
 import org.hibernate.milvus.jdbc.MilvusWeightedRanker;
 import org.hibernate.sql.ast.spi.StringBuilderSqlAppender;
 import org.hibernate.type.descriptor.DateTimeUtils;
+import org.hibernate.type.descriptor.java.PrimitiveByteArrayJavaType;
 import org.jetbrains.annotations.NotNull;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Reader;
 import java.nio.ByteBuffer;
 import java.sql.Array;
 import java.sql.Blob;
@@ -479,6 +483,11 @@ public class MilvusConnection implements Connection {
 			DateTimeUtils.appendAsTimestampWithMillis( sb, date, GMT );
 			return new JsonPrimitive( sb.toString() );
 		}
+		else if ( parameterValue instanceof DateWithCalendar dateWithCalendar ) {
+			StringBuilderSqlAppender sb = new StringBuilderSqlAppender();
+			DateTimeUtils.appendAsTimestampWithMillis( sb, dateWithCalendar.date(), dateWithCalendar.calendar().getTimeZone() );
+			return new JsonPrimitive( sb.toString() );
+		}
 		else if ( parameterValue instanceof java.util.Calendar calendar ) {
 			StringBuilderSqlAppender sb = new StringBuilderSqlAppender();
 			DateTimeUtils.appendAsTimestampWithMillis( sb, calendar, GMT );
@@ -518,9 +527,9 @@ public class MilvusConnection implements Connection {
 			final Object[] objects = (Object[]) array.getArray();
 			final JsonArray jsonArray = new JsonArray( objects.length );
 			switch ( array.getBaseDataType() ) {
-				case VarChar -> {
+				case VarChar, Timestamptz -> {
 					for ( Object o : objects ) {
-						jsonArray.add( (String) o );
+						jsonArray.add( determineJsonValue( o ) );
 					}
 				}
 				case Bool -> {
@@ -533,7 +542,16 @@ public class MilvusConnection implements Connection {
 						jsonArray.add( (Number) o );
 					}
 				}
-				default -> throw new SQLException( "Unsupported vector type: " + array.getArray().getClass().getName() );
+				default -> {
+					if ( array.getBaseDataType().getCode() == 25 ) {
+						for ( Object o : objects ) {
+							jsonArray.add( determineJsonValue( o ) );
+						}
+					}
+					else {
+						throw new SQLException( "Unsupported parameter type: " + array.getArray().getClass().getName() );
+					}
+				}
 			}
 			return jsonArray;
 		}
@@ -545,11 +563,7 @@ public class MilvusConnection implements Connection {
 			return array;
 		}
 		else if ( parameterValue instanceof byte[] bytes ) {
-			final JsonArray array = new JsonArray( bytes.length );
-			for ( byte b : bytes ) {
-				array.add( new JsonPrimitive( b ) );
-			}
-			return array;
+			return new JsonPrimitive( PrimitiveByteArrayJavaType.INSTANCE.toString( bytes ) );
 		}
 		else if ( parameterValue instanceof short[] shorts ) {
 			final JsonArray array = new JsonArray( shorts.length );
@@ -638,6 +652,28 @@ public class MilvusConnection implements Connection {
 			}
 			return jsonObject;
 		}
+		else if ( parameterValue instanceof InputStream inputStream ) {
+			try {
+				return new JsonPrimitive( PrimitiveByteArrayJavaType.INSTANCE.toString( inputStream.readAllBytes() ) );
+			}
+			catch (IOException e) {
+				throw new SQLException( "Couldn't extract bytes to bind parameter value", e );
+			}
+		}
+		else if ( parameterValue instanceof Reader reader ) {
+			try {
+				final StringBuilder result = new StringBuilder();
+				final char[] buffer = new char[8192];
+				int readChars;
+				while ( (readChars = reader.read( buffer, 0, buffer.length )) != -1 ) {
+					result.append( buffer, 0, readChars );
+				}
+				return new JsonPrimitive( result.toString() );
+			}
+			catch (IOException e) {
+				throw new SQLException( "Couldn't extract bytes to bind parameter value", e );
+			}
+		}
 		else {
 			throw new SQLException( "Unsupported parameter type: " + parameterValue.getClass().getName() );
 		}
@@ -683,12 +719,7 @@ public class MilvusConnection implements Connection {
 			return arrayList;
 		}
 		else if ( parameterValue instanceof byte[] bytes ) {
-			final ArrayList<Object> arrayList = new ArrayList<>( bytes.length );
-			for ( byte b : bytes ) {
-				// See #determineNativeNumberValue for the rationale of this transformation
-				arrayList.add( (int) b );
-			}
-			return arrayList;
+			return PrimitiveByteArrayJavaType.INSTANCE.toString( bytes );
 		}
 		else if ( parameterValue instanceof short[] shorts ) {
 			final ArrayList<Object> arrayList = new ArrayList<>( shorts.length );
@@ -736,6 +767,28 @@ public class MilvusConnection implements Connection {
 				arrayList.add( determineTemplateValue( o ) );
 			}
 			return arrayList;
+		}
+		else if ( parameterValue instanceof InputStream inputStream ) {
+			try {
+				return PrimitiveByteArrayJavaType.INSTANCE.toString( inputStream.readAllBytes() );
+			}
+			catch (IOException e) {
+				throw new SQLException( "Couldn't extract bytes to bind parameter value", e );
+			}
+		}
+		else if ( parameterValue instanceof Reader reader ) {
+			try {
+				final StringBuilder result = new StringBuilder();
+				final char[] buffer = new char[8192];
+				int readChars;
+				while ( (readChars = reader.read( buffer, 0, buffer.length )) != -1 ) {
+					result.append( buffer, 0, readChars );
+				}
+				return result.toString();
+			}
+			catch (IOException e) {
+				throw new SQLException( "Couldn't extract bytes to bind parameter value", e );
+			}
 		}
 		else {
 			throw new SQLException( "Unsupported parameter type: " + parameterValue.getClass().getName() );
