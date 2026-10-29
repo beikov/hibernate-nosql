@@ -32,7 +32,7 @@ services:
 
   milvus:
     container_name: milvus
-    image: ${MILVUS_IMAGE:-docker.io/milvusdb/milvus:v3.0.0@sha256:804b50bc1523a64e3c0f18cf33af7e0f8b33329584698ffee61c606d6fe8ee26}
+    image: ${MILVUS_IMAGE:-docker.io/milvusdb/milvus:v3.0.5@sha256:b425dabcd5bf3a0fc92742a18b6cde4d165f759caad1bbb2627f2eeaf293fd8f}
     command: ["bash", "-c", "/milvus/start.sh"]
     security_opt:
       - seccomp:unconfined
