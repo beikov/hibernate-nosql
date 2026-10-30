@@ -76,6 +76,7 @@ import org.hibernate.type.descriptor.java.JavaType;
 import org.hibernate.type.descriptor.java.spi.JavaTypeRegistry;
 import org.hibernate.type.descriptor.jdbc.ArrayJdbcType;
 import org.hibernate.type.descriptor.jdbc.spi.JdbcTypeRegistry;
+import org.hibernate.type.descriptor.sql.internal.CapacityDependentDdlType;
 import org.hibernate.type.descriptor.sql.internal.DdlTypeImpl;
 import org.hibernate.type.descriptor.sql.spi.DdlTypeRegistry;
 import org.hibernate.type.spi.TypeConfiguration;
@@ -297,6 +298,11 @@ public class MilvusDialect extends Dialect {
 		);
 		ddlTypeRegistry.addDescriptor(
 				new DdlTypeImpl( JSON, "json", this )
+		);
+		ddlTypeRegistry.addDescriptor(
+				CapacityDependentDdlType.builder( FLOAT, columnType( DOUBLE ), this )
+						.withTypeCapacity( 24, "float" )
+						.build()
 		);
 		// todo (milvus): geometry type
 
