@@ -12,6 +12,7 @@ import org.hibernate.internal.util.StringHelper;
 import org.hibernate.mapping.Column;
 import org.hibernate.mapping.Index;
 import org.hibernate.mapping.Table;
+import org.hibernate.milvus.MilvusDialect;
 import org.hibernate.milvus.jdbc.MilvusCreateCollection;
 import org.hibernate.milvus.jdbc.MilvusDropCollection;
 import org.hibernate.milvus.jdbc.MilvusHelper;
@@ -31,17 +32,18 @@ public class MilvusTableExporter implements Exporter<Table> {
 
 	@Override
 	public String[] getSqlCreateStrings(Table exportable, Metadata metadata, SqlStringGenerationContext context) {
+		final MilvusDialect dialect = (MilvusDialect) metadata.getDatabase().getDialect();
 		final String collectionName = exportable.getQualifiedTableName().getTableName().toString();
 		final Collection<Column> columns = exportable.getColumns();
-
+		final boolean addMissingVectorField = dialect.isAddMissingVectorField();
 		final Map<String, Integer> fieldsNeedingIndex = new HashMap<>();
 		final List<MilvusCreateCollection.IndexParam> fieldIndexes = new ArrayList<>();
 		final List<MilvusCreateCollection.FieldSchema> fields = new ArrayList<>( columns.size() );
 		final List<MilvusCreateCollection.IndexParam> indexParams = new ArrayList<>( exportable.getIndexes().size() + 1 );
-		boolean hasVector = false;
+		boolean hasVector = !addMissingVectorField;
 		boolean hasPrimaryKey = false;
 		for ( Column column : columns ) {
-			final String fieldName = column.getText( context.getDialect() );
+			final String fieldName = column.getText( dialect );
 			final boolean primaryKey =
 					exportable.hasPrimaryKey() && exportable.getPrimaryKey().containsColumn( column );
 			final String sqlType = column.getSqlType( metadata );
@@ -112,7 +114,7 @@ public class MilvusTableExporter implements Exporter<Table> {
 			fields.add( field );
 		}
 
-		if ( !hasVector && context.getDialect().getVersion().isSameOrAfter( 2, 4, 2 ) ) {
+		if ( !hasVector && dialect.getVersion().isSameOrAfter( 2, 4, 2 ) ) {
 			fieldsNeedingIndex.put( MilvusSqlAstTranslator.DEFAULT_EMBEDDING_FIELD, fields.size() );
 			// As of 2.4.2 a schema requires at least one vector field: https://github.com/milvus-io/milvus/issues/33853
 			fields.add( new MilvusCreateCollection.FieldSchema(
@@ -127,7 +129,7 @@ public class MilvusTableExporter implements Exporter<Table> {
 					false,
 					null,
 					null,
-					false,
+					dialect.getVersion().isSameOrAfter( 3 ),
 					null,
 					false,
 					null,
@@ -164,7 +166,7 @@ public class MilvusTableExporter implements Exporter<Table> {
 			if ( index.getColumnSpan() != 1 ) {
 				throw new IllegalArgumentException("Milvus can only index a single column");
 			}
-			fieldName = index.getSelectables().get( 0 ).getText( context.getDialect() );
+			fieldName = index.getSelectables().get( 0 ).getText( dialect );
 
 			io.milvus.v2.common.IndexParam.IndexType indexType = IndexParam.IndexType.AUTOINDEX;
 			io.milvus.v2.common.IndexParam.MetricType metricType = null;

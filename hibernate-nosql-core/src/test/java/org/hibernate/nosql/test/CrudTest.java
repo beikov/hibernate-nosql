@@ -7,10 +7,13 @@ package org.hibernate.nosql.test;
 import jakarta.nosql.Column;
 import jakarta.nosql.Entity;
 import jakarta.nosql.Id;
+import org.hibernate.milvus.MilvusSettings;
 import org.hibernate.nosql.test.junit.Template;
 import org.hibernate.nosql.test.junit.TemplateScope;
 import org.hibernate.testing.orm.junit.DomainModel;
+import org.hibernate.testing.orm.junit.ServiceRegistry;
 import org.hibernate.testing.orm.junit.SessionFactory;
+import org.hibernate.testing.orm.junit.Setting;
 import org.junit.jupiter.api.Test;
 
 import java.time.LocalDate;
@@ -23,6 +26,7 @@ import java.util.function.Predicate;
 import static org.junit.jupiter.api.Assertions.*;
 
 @Template
+@ServiceRegistry(settings = @Setting(name = MilvusSettings.ADD_MISSING_VECTOR_FIELD, value = "true"))
 @SessionFactory
 @DomainModel(annotatedClasses = CrudTest.SimpleEntity.class)
 public class CrudTest {

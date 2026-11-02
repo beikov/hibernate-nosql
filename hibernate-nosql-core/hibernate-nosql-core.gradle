@@ -20,6 +20,8 @@ dependencies {
     testImplementation libs.hibernate.models.jandex
 //    testImplementation project( path: ':hibernate-core', configuration: 'tests' )
 
+    testCompileOnly project(':hibernate-milvus')
+
     if ( db.startsWith( 'neo4j' ) ) {
         testRuntimeOnly project(':hibernate-neo4j')
     }
