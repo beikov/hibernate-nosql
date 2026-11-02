@@ -47,7 +47,7 @@ public final class BasicDialectFeatureChecks {
 		@Override
 		public boolean apply(Dialect dialect) {
 			// Milvus does not support joins, but MilvusMetadataContributor takes care of making fetches of collection
-			// parts through separate selects
+			// parts through separate selects. This expects that the MilvusSettings#JOIN_TABLE_COMPATIBILITY is true.
 			return true;
 		}
 	}
