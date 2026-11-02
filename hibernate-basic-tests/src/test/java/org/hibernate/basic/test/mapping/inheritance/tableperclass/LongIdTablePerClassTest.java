@@ -5,14 +5,18 @@
 package org.hibernate.basic.test.mapping.inheritance.tableperclass;
 
 import org.hibernate.basic.test.mapping.inheritance.AbstractInheritanceTest;
+import org.hibernate.milvus.MilvusSettings;
 import org.hibernate.nosql.testing.BasicDialectFeatureChecks;
 import org.hibernate.testing.orm.junit.DomainModel;
 import org.hibernate.testing.orm.junit.RequiresDialectFeature;
+import org.hibernate.testing.orm.junit.ServiceRegistry;
 import org.hibernate.testing.orm.junit.SessionFactory;
 import org.hibernate.testing.orm.junit.SessionFactoryScope;
+import org.hibernate.testing.orm.junit.Setting;
 import org.junit.jupiter.api.Test;
 
 @DomainModel(annotatedClasses = { LongIdTablePerClassEntity.class, LongIdTablePerClassEntitySub1.class, LongIdTablePerClassEntitySub2.class })
+@ServiceRegistry(settings = @Setting(name = MilvusSettings.ADD_MISSING_VECTOR_FIELD, value = "true"))
 @SessionFactory
 public class LongIdTablePerClassTest extends AbstractInheritanceTest<Long, LongIdTablePerClassEntity> {
 

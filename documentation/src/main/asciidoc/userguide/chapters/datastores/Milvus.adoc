@@ -21,8 +21,10 @@ selected through the `DialectResolver` contract, unless `hibernate.boot.allow_jd
 
 Schema generation is supported, but Milvus requires that a collection (table) contains at least one vector field
 (non-null until version 3.0) and that an index exists, as well as that the collection is "loaded".
-This artifact will automatically add a vector field named `embedding`, if no vector field was found on an entity mapping
-and fill it with a `[0, 0]` vector on insert. It will also create a COSINE vector index automatically and load the
+
+When the `hibernate.nosql.milvus.add_missing_vector_field` setting is enabled, this artifact will automatically add
+a vector field named `embedding`, if no vector field was found on an entity mapping and fill it with a `[0, 0]` vector
+on insert. It will also create a COSINE vector index automatically and load the
 collection via the schema generation (hbm2ddl).
 
 Indexes can also be declared via the Jakarta Persistence `@Table(indexes)` annotation and will create automatic indexes
@@ -30,7 +32,7 @@ or vector indexes, depending on the type of the column/field.
 
 Declaring an index for a vector field, will create a vector index. To specify the metric or other index parameters,
 provide the `options` member and give a comma-separated list of assignment-operator-separated key-value pairs
-e.g. `@Index( name = "VectorEntity_ip", columnList = "the_ip_vector", options = "metric=ip")`.
+e.g. `@Index(name = "VectorEntity_ip", columnList = "the_ip_vector", options = "metric=ip")`.
 
 Supported values for `metric` are defined via the `io.milvus.v2.common.IndexParam.MetricType` enumeration,
 e.g. `l2`, `ip`, `cosine`, `hamming`, `jaccard` etc.

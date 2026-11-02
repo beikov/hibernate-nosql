@@ -15,7 +15,10 @@ import org.hibernate.testing.orm.junit.SessionFactory;
 import org.hibernate.testing.orm.junit.Setting;
 
 @DomainModel(annotatedClasses = { LongIdOneToManyJoinTableUnidirEntity.class, SimpleLongIdEntity.class })
-@ServiceRegistry(settings = @Setting(name = MilvusSettings.JOIN_TABLE_COMPATIBILITY, value = "true"))
+@ServiceRegistry(settings = {
+		@Setting(name = MilvusSettings.ADD_MISSING_VECTOR_FIELD, value = "true"),
+		@Setting(name = MilvusSettings.JOIN_TABLE_COMPATIBILITY, value = "true")
+})
 @SessionFactory
 @RequiresDialectFeature(feature = BasicDialectFeatureChecks.SupportsJoinTableCollections.class)
 public class LongIdOneToManyJoinTableUnidirTest

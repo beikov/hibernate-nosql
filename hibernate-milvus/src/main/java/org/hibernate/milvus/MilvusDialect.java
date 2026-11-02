@@ -21,6 +21,8 @@ import org.hibernate.dialect.function.array.ArrayConstructorFunction;
 import org.hibernate.dialect.identity.IdentityColumnSupport;
 import org.hibernate.dialect.lock.internal.NoLockingSupport;
 import org.hibernate.dialect.lock.spi.LockingSupport;
+import org.hibernate.engine.config.spi.ConfigurationService;
+import org.hibernate.engine.config.spi.StandardConverters;
 import org.hibernate.engine.jdbc.dialect.spi.DialectResolutionInfo;
 import org.hibernate.engine.jdbc.env.spi.IdentifierCaseStrategy;
 import org.hibernate.engine.jdbc.env.spi.IdentifierHelper;
@@ -119,6 +121,7 @@ public class MilvusDialect extends Dialect {
 	private static final DatabaseVersion MINIMUM_VERSION = DatabaseVersion.make( 2, 5 );
 
 	private final boolean supportsText;
+	private volatile boolean addMissingVectorField;
 
 	@SuppressWarnings("unused")
 	public MilvusDialect() {
@@ -140,6 +143,10 @@ public class MilvusDialect extends Dialect {
 			supportsText = false;
 		}
 		this.supportsText = supportsText;
+	}
+
+	public boolean isAddMissingVectorField() {
+		return addMissingVectorField;
 	}
 
 	@Override
@@ -190,6 +197,13 @@ public class MilvusDialect extends Dialect {
 	protected void initDefaultProperties() {
 		// This essentially disables joins in regular find queries
 		getDefaultProperties().setProperty( FetchSettings.MAX_FETCH_DEPTH, "-1" );
+	}
+
+	@Override
+	public void contribute(TypeContributions typeContributions, ServiceRegistry serviceRegistry) {
+		super.contribute( typeContributions, serviceRegistry );
+		addMissingVectorField = serviceRegistry.getService( ConfigurationService.class )
+				.getSetting( MilvusSettings.ADD_MISSING_VECTOR_FIELD, StandardConverters.BOOLEAN, false );
 	}
 
 	@Override

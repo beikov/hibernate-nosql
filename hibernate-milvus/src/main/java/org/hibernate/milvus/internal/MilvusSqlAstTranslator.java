@@ -22,6 +22,7 @@ import org.hibernate.metamodel.mapping.PluralAttributeMapping;
 import org.hibernate.metamodel.mapping.SelectableMapping;
 import org.hibernate.metamodel.mapping.ValuedModelPart;
 import org.hibernate.milvus.MilvusDatabaseHints;
+import org.hibernate.milvus.MilvusDialect;
 import org.hibernate.milvus.jdbc.AbstractMilvusCollectionStatement;
 import org.hibernate.milvus.jdbc.AbstractMilvusQuery;
 import org.hibernate.milvus.jdbc.MilvusBooleanValue;
@@ -323,8 +324,9 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	}
 
 	private void addDefaultEmbeddingDataIfNeeded(Map<String, MilvusTypedValue> valueMap, MutationTarget<?> mutationTarget) {
-		// todo (milvus): as of version 3.0, the vector can be null in the beginning
-		if ( !hasVector( mutationTarget.getTargetPart() ) ) {
+		if ( getDialect().getVersion().isBefore( 3 )
+			&& ((MilvusDialect) getDialect()).isAddMissingVectorField()
+			&& !hasVector( mutationTarget.getTargetPart() ) ) {
 			valueMap.put( DEFAULT_EMBEDDING_FIELD, new MilvusFloatVectorValue( new float[]{ 0, 0 } ) );
 		}
 	}
