@@ -85,6 +85,12 @@ Milvus does **NOT** have a native query language. Therefore, the native queries 
 a String serialized form of the request object, to be passed to the native driver. Parsing and serialization is done
 with `org.hibernate.milvus.jdbc.MilvusJsonHelper`, which you can use to construct custom native queries.
 
+===== Join table handling
+
+Since Milvus does **NOT** support joins, join table mappings pose a problem, since they sometimes require joins.
+To allow compatibility, the `hibernate.nosql.milvus.join_table_compatibility` configuration setting can be enabled
+to select join table contents through separate select statements.
+
 ===== Limited query support
 
 Milvus lacks many basic querying features. The following is a non-exhaustive list of HQL/Criteria features that **DON'T** work
@@ -106,7 +112,7 @@ Milvus lacks many basic querying features. The following is a non-exhaustive lis
 * Anything involving SQL statements e.g. `@NamedNativeQuery`, `@SQLSelect`, `SQLDelete`, `@SQLInsert`, `@SQLUpdate`
 * `@Inheritance(strategy)` other than `SINGLE_TABLE`
 * Locking (optimistic and pessimistic) as well as `@Version`
-* Case insensitive `like` predicate
+* Case-insensitive `like` predicate
 * Not equal (`<>`/`!=`) or `is distinct from` operator for vector distance
 * No or multiple `from` clause items
 * Functions anywhere but in the `where` clause, except vector distance and aggregate functions in `select` clause
