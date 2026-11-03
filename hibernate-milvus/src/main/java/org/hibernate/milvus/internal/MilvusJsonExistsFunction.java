@@ -40,6 +40,7 @@ public class MilvusJsonExistsFunction extends JsonExistsFunction {
 		}
 		arguments.jsonDocument().accept( walker );
 		sqlAppender.appendSql( " is not null and " );
+		arguments.jsonDocument().accept( walker );
 		MilvusJsonValueFunction.renderJsonPath(
 				sqlAppender,
 				walker,

@@ -124,7 +124,7 @@ Milvus lacks many basic querying features. The following is a non-exhaustive lis
 ** `json_array`
 ** `json_value`
 ** `json_query`
-** `json_exists`
+** `json_exists` (A `null` value is treated as missing)
 ** `array`
 ** `array_list`
 ** `array_length`
