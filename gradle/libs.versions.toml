@@ -4,8 +4,7 @@
 hibernate = "7.4.14.Final"
 jbossLoggingTool = "3.0.4.Final"
 jandex = "3.6.0"
-jacksonAnnotations = "2.22"
-jackson = "2.22.4"
+gson = "2.13.1"
 
 # Jakarta Libs
 annotation = "3.0.0"
@@ -23,6 +22,8 @@ junitJupiterLauncher = "6.0.3"
 junitJupiterPlatformGradlePlugin = "1.0.3"
 assertj = "3.27.7"
 log4j = "2.26.1"
+jacksonAnnotations = "2.22"
+jackson = "2.22.4"
 
 # JDBC Libs
 h2 = "2.5.252"
@@ -81,9 +82,7 @@ jandex = { group = "io.smallrye", name = "jandex", version.ref = "jandex" }
 logging = { group = "org.jboss.logging", name = "jboss-logging" }
 loggingAnnotations = { group = "org.jboss.logging", name = "jboss-logging-annotations", version.ref = "jbossLoggingTool" }
 loggingProcessor = { group = "org.jboss.logging", name = "jboss-logging-processor", version.ref = "jbossLoggingTool" }
-jackson-annotations = { group = "com.fasterxml.jackson.core", name = "jackson-annotations", version.ref = "jacksonAnnotations" }
-jackson-core = { group = "com.fasterxml.jackson.core", name = "jackson-core", version.ref = "jackson" }
-jackson-databind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson" }
+gson = { group = "com.google.code.gson", name = "gson", version.ref = "gson" }
 
 # Compilation (static checks)
 compilation-jetbrainsAnnotations = { group = "org.jetbrains", name = "annotations", version.ref = "jetbrainsAnnotations" }
@@ -112,6 +111,9 @@ test-junitJupiterLauncher = { group = "org.junit.platform", name = "junit-platfo
 test-junitJupiterPlatformGradlePlugin = { group = "org.junit.platform", name = "junit-platform-gradle-plugin", version.ref = "junitJupiterPlatformGradlePlugin" }
 test-assertjCore = { group = "org.assertj", name = "assertj-core", version.ref = "assertj" }
 test-log4j2 = { group = "org.apache.logging.log4j", name = "log4j-core", version.ref = "log4j" }
+jackson-annotations = { group = "com.fasterxml.jackson.core", name = "jackson-annotations", version.ref = "jacksonAnnotations" }
+jackson-core = { group = "com.fasterxml.jackson.core", name = "jackson-core", version.ref = "jackson" }
+jackson-databind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson" }
 
 
 # JDBC

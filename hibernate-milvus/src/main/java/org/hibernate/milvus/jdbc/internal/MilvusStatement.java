@@ -4,7 +4,7 @@
  */
 package org.hibernate.milvus.jdbc.internal;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
+import com.google.gson.JsonParseException;
 import io.milvus.v2.service.vector.response.DeleteResp;
 import io.milvus.v2.service.vector.response.InsertResp;
 import io.milvus.v2.service.vector.response.QueryResp;
@@ -57,7 +57,7 @@ public class MilvusStatement implements Statement {
 		try {
 			return MilvusJsonHelper.parseDefinition( sql );
 		}
-		catch (JsonProcessingException e) {
+		catch (JsonParseException e) {
 			throw new SQLException( "Invalid statement", e );
 		}
 	}

@@ -13,9 +13,7 @@ dependencies {
     api project( ':hibernate-nosql-core' )
     implementation libs.hibernate.vector
 
-    implementation libs.jackson.annotations
-    implementation libs.jackson.core
-    implementation libs.jackson.databind
+    implementation libs.gson
 
     if ( db.startsWith( 'milvus' ) && dbVersion.startsWith( "3" ) ) {
         implementation libs.jdbc.milvus30
