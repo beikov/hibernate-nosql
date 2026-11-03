@@ -21,6 +21,8 @@ import org.hibernate.type.spi.TypeConfiguration;
 
 import java.util.List;
 
+import static org.hibernate.milvus.internal.QuotingHelper.appendJsonString;
+
 
 /**
  * Milvus json_value function.
@@ -85,7 +87,7 @@ public class MilvusJsonValueFunction extends JsonValueFunction {
 			final JsonPathHelper.JsonPathElement jsonPathElement = jsonPathElements.get( i );
 			if ( jsonPathElement instanceof JsonPathHelper.JsonAttribute attribute ) {
 				sqlAppender.appendSql( '[' );
-				sqlAppender.appendDoubleQuoteEscapedString( attribute.attribute() );
+				appendJsonString( sqlAppender, attribute.attribute() );
 				sqlAppender.appendSql( ']' );
 			}
 			else if ( jsonPathElement instanceof JsonPathHelper.JsonParameterIndexAccess parameterIndexAccess ) {
@@ -102,7 +104,7 @@ public class MilvusJsonValueFunction extends JsonValueFunction {
 			}
 			else {
 				sqlAppender.appendSql( '[' );
-				sqlAppender.appendSql( ( (JsonPathHelper.JsonIndexAccess) jsonPathElement ).index() + 1 );
+				sqlAppender.appendSql( ( (JsonPathHelper.JsonIndexAccess) jsonPathElement ).index() );
 				sqlAppender.appendSql( ']' );
 			}
 		}

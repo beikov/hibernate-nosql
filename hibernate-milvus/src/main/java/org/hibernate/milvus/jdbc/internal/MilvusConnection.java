@@ -790,6 +790,13 @@ public class MilvusConnection implements Connection {
 				throw new SQLException( "Couldn't extract bytes to bind parameter value", e );
 			}
 		}
+		else if ( parameterValue instanceof JsonArray jsonArray ) {
+			final ArrayList<Object> arrayList = new ArrayList<>( jsonArray.size() );
+			for ( JsonElement o : jsonArray ) {
+				arrayList.add( o );
+			}
+			return arrayList;
+		}
 		else {
 			throw new SQLException( "Unsupported parameter type: " + parameterValue.getClass().getName() );
 		}
