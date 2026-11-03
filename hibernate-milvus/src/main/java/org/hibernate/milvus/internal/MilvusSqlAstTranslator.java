@@ -79,6 +79,7 @@ import org.hibernate.sql.ast.tree.predicate.InArrayPredicate;
 import org.hibernate.sql.ast.tree.predicate.InListPredicate;
 import org.hibernate.sql.ast.tree.predicate.InSubQueryPredicate;
 import org.hibernate.sql.ast.tree.predicate.LikePredicate;
+import org.hibernate.sql.ast.tree.predicate.NullnessPredicate;
 import org.hibernate.sql.ast.tree.predicate.Predicate;
 import org.hibernate.sql.ast.tree.predicate.ThruthnessPredicate;
 import org.hibernate.sql.ast.tree.select.QueryGroup;
@@ -509,6 +510,26 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 				appendSql( operator.sqlText() );
 			}
 			rhs.accept( this );
+		}
+	}
+
+	@Override
+	public void visitNullnessPredicate(NullnessPredicate nullnessPredicate) {
+		final ColumnReference columnReference;
+		if ( getDialect().getVersion().isSameOrAfter( 3 )
+				|| (columnReference = nullnessPredicate.getExpression().getColumnReference()) == null
+				|| columnReference.getExpressionType() == null
+				|| !isVector( columnReference.getExpressionType().getJdbcType().getDefaultSqlTypeCode() ) ) {
+			super.visitNullnessPredicate( nullnessPredicate );
+		}
+		else {
+			// Before Milvus 3.0 vectors couldn't be null, so we can render a constant predicate instead
+			if ( nullnessPredicate.isNegated() ) {
+				appendSql( TRUE_CONSTANT );
+			}
+			else {
+				appendSql( "1=0" );
+			}
 		}
 	}
 

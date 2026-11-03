@@ -230,6 +230,22 @@ public class MilvusTest {
 		} );
 	}
 
+	@Test
+	public void testVectorNonNull(SessionFactoryScope scope) {
+		scope.inTransaction( em -> {
+			final List<Tuple> results = em.createSelectionQuery( """
+				select e.id, e.theIpVector
+				from VectorEntity e
+				where e.theIpVector is not null
+				""", Tuple.class )
+					.getResultList();
+			results.sort( Comparator.comparingLong( o -> o.get( 0, Long.class ) ) );
+			assertEquals( 2, results.size() );
+			assertEquals( 1L, results.get( 0 ).get( 0 ) );
+			assertEquals( 2L, results.get( 1 ).get( 0 ) );
+		} );
+	}
+
 	@Entity( name = "VectorEntity" )
 	@Table(indexes = {
 			@Index( name = "VectorEntity_ip", columnList = "the_ip_vector", options = "metric=ip"),
