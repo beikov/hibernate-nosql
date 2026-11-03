@@ -15,6 +15,10 @@ dependencies {
     testImplementation project( ':hibernate-nosql-testing' )
     testImplementation libs.hibernate.testing
     testImplementation libs.hibernate.vector
+
+    testRuntimeOnly libs.jackson.annotations
+    testRuntimeOnly libs.jackson.core
+    testRuntimeOnly libs.jackson.databind
 }
 
 test {
