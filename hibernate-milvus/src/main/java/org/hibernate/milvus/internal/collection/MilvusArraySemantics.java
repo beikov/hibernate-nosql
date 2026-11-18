@@ -4,6 +4,8 @@
  */
 package org.hibernate.milvus.internal.collection;
 
+import java.util.Set;
+import java.util.LinkedHashSet;
 import org.hibernate.collection.spi.CollectionInitializerProducer;
 import org.hibernate.collection.spi.CollectionSemantics;
 import org.hibernate.collection.spi.InitializerProducerBuilder;
@@ -128,5 +130,45 @@ public class MilvusArraySemantics<E> implements CollectionSemantics<E[], E> {
 		for ( E element : array ) {
 			action.accept( element );
 		}
+	}
+
+	@Override
+	public Set<?> copyPart(
+			Object rawCollection,
+			CollectionPersister collectionDescriptor,
+			CollectionPart.Nature partNature) {
+		final LinkedHashSet<Object> copy = new LinkedHashSet<>();
+		final boolean isArray = rawCollection != null && rawCollection.getClass().isArray();
+		final int length = isArray ? java.lang.reflect.Array.getLength( rawCollection ) : 0;
+		if ( partNature == CollectionPart.Nature.INDEX ) {
+			final int listIndexBase = collectionDescriptor.getAttributeMapping().getIndexMetadata().getListIndexBase();
+			for ( int i = 0; i < length; i++ ) {
+				copy.add( listIndexBase + i );
+			}
+		}
+		else if ( isArray ) {
+			for ( int i = 0; i < length; i++ ) {
+				copy.add( java.lang.reflect.Array.get( rawCollection, i ) );
+			}
+		}
+		return copy;
+	}
+
+	@Override
+	public Object copy(Object rawCollection, CollectionPersister collectionDescriptor) {
+		if ( rawCollection != null && rawCollection.getClass().isArray() ) {
+			final int length = java.lang.reflect.Array.getLength( rawCollection );
+			final Object copy = java.lang.reflect.Array.newInstance( rawCollection.getClass().getComponentType(), length );
+			System.arraycopy( rawCollection, 0, copy, 0, length );
+			return copy;
+		}
+		return rawCollection;
+	}
+
+	@Override
+	public int collectionSize(Object rawCollection) {
+		return rawCollection != null && rawCollection.getClass().isArray()
+				? java.lang.reflect.Array.getLength( rawCollection )
+				: 0;
 	}
 }

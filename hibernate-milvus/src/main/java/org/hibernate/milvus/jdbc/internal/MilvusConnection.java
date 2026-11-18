@@ -4,6 +4,7 @@
  */
 package org.hibernate.milvus.jdbc.internal;
 
+import org.hibernate.milvus.jdbc.AbstractMilvusCollectionStatement;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
@@ -59,7 +60,7 @@ import org.hibernate.milvus.jdbc.MilvusTruncateCollection;
 import org.hibernate.milvus.jdbc.MilvusTypedValue;
 import org.hibernate.milvus.jdbc.MilvusUpsert;
 import org.hibernate.milvus.jdbc.MilvusWeightedRanker;
-import org.hibernate.sql.ast.spi.StringBuilderSqlAppender;
+import org.hibernate.sql.spi.StringBuilderSqlAppender;
 import org.hibernate.type.descriptor.DateTimeUtils;
 import org.hibernate.type.descriptor.java.PrimitiveByteArrayJavaType;
 import org.jetbrains.annotations.NotNull;
@@ -300,7 +301,14 @@ public class MilvusConnection implements Connection {
 		return client.insert( builder.build() );
 	}
 
+	private static void checkSupported(AbstractMilvusCollectionStatement statement) throws SQLException {
+		if ( statement.getUnsupportedReason() != null ) {
+			throw new SQLFeatureNotSupportedException( statement.getUnsupportedReason() );
+		}
+	}
+
 	UpsertResp executeUpsert(MilvusUpsert query, Object[] parameterValues) throws SQLException {
+		checkSupported( query );
 		UpsertReq.UpsertReqBuilder builder = UpsertReq.builder();
 		if ( query.getCollectionName() != null ) {
 			builder.collectionName( query.getCollectionName() );
@@ -345,6 +353,7 @@ public class MilvusConnection implements Connection {
 	}
 
 	UpsertResp executeBatchUpsert(MilvusUpsert query, ArrayList<Object[]> batchParameterValues) throws SQLException {
+		checkSupported( query );
 		UpsertReq.UpsertReqBuilder builder = UpsertReq.builder();
 		if ( query.getCollectionName() != null ) {
 			builder.collectionName( query.getCollectionName() );
@@ -368,6 +377,7 @@ public class MilvusConnection implements Connection {
 	}
 
 	DeleteResp executeDelete(MilvusDelete query, Object[] parameterValues) throws SQLException {
+		checkSupported( query );
 		DeleteReq.DeleteReqBuilder builder = DeleteReq.builder();
 		if ( query.getCollectionName() != null ) {
 			builder.collectionName( query.getCollectionName() );

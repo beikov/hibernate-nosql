@@ -4,8 +4,6 @@
  */
 package org.hibernate.milvus.internal.mapping;
 
-import org.hibernate.FetchMode;
-import org.hibernate.Incubating;
 import org.hibernate.Internal;
 import org.hibernate.MappingException;
 import org.hibernate.annotations.CacheLayout;
@@ -13,7 +11,6 @@ import org.hibernate.annotations.SoftDeleteType;
 import org.hibernate.boot.spi.MetadataBuildingContext;
 import org.hibernate.boot.spi.MetadataImplementor;
 import org.hibernate.collection.spi.CollectionSemantics;
-import org.hibernate.engine.spi.ExecuteUpdateResultCheckStyle;
 import org.hibernate.jdbc.Expectation;
 import org.hibernate.mapping.Collection;
 import org.hibernate.mapping.Column;
@@ -37,7 +34,6 @@ import org.hibernate.type.Type;
 
 import java.util.Comparator;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -313,16 +309,6 @@ public final class MilvusList extends List {
 	}
 
 	@Override
-	public FetchMode getFetchMode() {
-		return original.getFetchMode();
-	}
-
-	@Override
-	public void setFetchMode(FetchMode fetchMode) {
-		original.setFetchMode( fetchMode );
-	}
-
-	@Override
 	public java.util.List<Selectable> getSelectables() {
 		return original.getSelectables();
 	}
@@ -457,8 +443,8 @@ public final class MilvusList extends List {
 	}
 
 	@Override
-	public void setCustomSQLInsert(String customSQLInsert, boolean callable, ExecuteUpdateResultCheckStyle checkStyle) {
-		original.setCustomSQLInsert( customSQLInsert, callable, checkStyle );
+	public void setCustomSQLInsert(String customSQLInsert, boolean callable) {
+		original.setCustomSQLInsert( customSQLInsert, callable );
 	}
 
 	@Override
@@ -472,8 +458,8 @@ public final class MilvusList extends List {
 	}
 
 	@Override
-	public void setCustomSQLUpdate(String customSQLUpdate, boolean callable, ExecuteUpdateResultCheckStyle checkStyle) {
-		original.setCustomSQLUpdate( customSQLUpdate, callable, checkStyle );
+	public void setCustomSQLUpdate(String customSQLUpdate, boolean callable) {
+		original.setCustomSQLUpdate( customSQLUpdate, callable );
 	}
 
 	@Override
@@ -487,8 +473,8 @@ public final class MilvusList extends List {
 	}
 
 	@Override
-	public void setCustomSQLDelete(String customSQLDelete, boolean callable, ExecuteUpdateResultCheckStyle checkStyle) {
-		original.setCustomSQLDelete( customSQLDelete, callable, checkStyle );
+	public void setCustomSQLDelete(String customSQLDelete, boolean callable) {
+		original.setCustomSQLDelete( customSQLDelete, callable );
 	}
 
 	@Override
@@ -502,8 +488,8 @@ public final class MilvusList extends List {
 	}
 
 	@Override
-	public void setCustomSQLDeleteAll(String customSQLDeleteAll, boolean callable, ExecuteUpdateResultCheckStyle checkStyle) {
-		original.setCustomSQLDeleteAll( customSQLDeleteAll, callable, checkStyle );
+	public void setCustomSQLDeleteAll(String customSQLDeleteAll, boolean callable) {
+		original.setCustomSQLDeleteAll( customSQLDeleteAll, callable );
 	}
 
 	@Override
@@ -594,18 +580,6 @@ public final class MilvusList extends List {
 	@Override
 	public void setTypeName(String typeName) {
 		original.setTypeName( typeName );
-	}
-
-	@Deprecated(since = "7.0", forRemoval = true)
-	@Override
-	public Properties getTypeParameters() {
-		return original.getTypeParameters();
-	}
-
-	@Deprecated(since = "7.0", forRemoval = true)
-	@Override
-	public void setTypeParameters(Properties parameterMap) {
-		original.setTypeParameters( parameterMap );
 	}
 
 	@Override
@@ -818,13 +792,11 @@ public final class MilvusList extends List {
 		return original.getConstraintColumns();
 	}
 
-	@Incubating
 	@Override
 	public JdbcMapping getSelectableType(MappingContext mappingContext, int index) throws MappingException {
 		return original.getSelectableType( mappingContext, index );
 	}
 
-	@Incubating
 	@Override
 	public String getExtraCreateTableInfo() {
 		return original.getExtraCreateTableInfo();
