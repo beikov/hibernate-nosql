@@ -4,6 +4,7 @@
  */
 package org.hibernate.milvus.internal;
 
+import org.hibernate.AssertionFailure;
 import org.hibernate.dialect.sql.ast.spi.ReturningRenderingPlan;
 import org.hibernate.dialect.sql.ast.spi.ReturningRenderingSupport;
 import org.hibernate.dialect.sql.ast.spi.SetReturningFunctionRenderingSupport;
@@ -154,51 +155,58 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 	@Override
 	public void appendSql(String fragment) {
-		if ( !sqlFinalized ) {
-			super.appendSql( fragment );
+		if ( sqlFinalized ) {
+			throw new AssertionFailure( "SQL buffer was already finalized" );
 		}
+		super.appendSql( fragment );
 	}
 
 	@Override
 	public void appendSql(char fragment) {
-		if ( !sqlFinalized ) {
-			super.appendSql( fragment );
+		if ( sqlFinalized ) {
+			throw new AssertionFailure( "SQL buffer was already finalized" );
 		}
+		super.appendSql( fragment );
 	}
 
 	@Override
 	public void appendSql(int value) {
-		if ( !sqlFinalized ) {
-			super.appendSql( value );
+		if ( sqlFinalized ) {
+			throw new AssertionFailure( "SQL buffer was already finalized" );
 		}
+		super.appendSql( value );
 	}
 
 	@Override
 	public void appendSql(long value) {
-		if ( !sqlFinalized ) {
-			super.appendSql( value );
+		if ( sqlFinalized ) {
+			throw new AssertionFailure( "SQL buffer was already finalized" );
 		}
+		super.appendSql( value );
 	}
 
 	@Override
 	public void appendSql(double value) {
-		if ( !sqlFinalized ) {
-			super.appendSql( value );
+		if ( sqlFinalized ) {
+			throw new AssertionFailure( "SQL buffer was already finalized" );
 		}
+		super.appendSql( value );
 	}
 
 	@Override
 	public void appendSql(float value) {
-		if ( !sqlFinalized ) {
-			super.appendSql( value );
+		if ( sqlFinalized ) {
+			throw new AssertionFailure( "SQL buffer was already finalized" );
 		}
+		super.appendSql( value );
 	}
 
 	@Override
 	public void appendSql(boolean value) {
-		if ( !sqlFinalized ) {
-			super.appendSql( value );
+		if ( sqlFinalized ) {
+			throw new AssertionFailure( "SQL buffer was already finalized" );
 		}
+		super.appendSql( value );
 	}
 
 	@Override
@@ -602,7 +610,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	@Override
 	protected void visitParameterAsParameter(JdbcParameter jdbcParameter) {
 		if ( sqlFinalized ) {
-			return;
+			throw new AssertionFailure( "SQL buffer was already finalized" );
 		}
 		super.visitParameterAsParameter( jdbcParameter );
 		addParameterRegistration( getParameterBinders().size() );
@@ -1844,13 +1852,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	 */
 	void renderStandardTableDelete(TableDeleteStandard tableDelete) {
 		if ( tableDelete.getNumberOfOptimisticLockBindings() > 0 ) {
-			// Hibernate ORM creates these statements eagerly, so fail on execution instead
-			final MilvusDelete unsupported = new MilvusDelete();
-			unsupported.setCollectionName( tableDelete.getMutatingTable().getTableName() );
-			unsupported.setUnsupportedReason( "Optimistic locking not supported on Milvus" );
-			milvusStatement = unsupported;
-			finishStatement();
-			return;
+			throw new UnsupportedOperationException( "Optimistic locking not supported on Milvus" );
 		}
 
 		getCurrentClauseStack().push( Clause.DELETE );
@@ -1906,28 +1908,14 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 
 	@Override
 	protected void renderStandardTableUpdate(TableUpdateStandard tableUpdate) {
-		final String unsupportedReason;
 		if ( tableUpdate.getNumberOfOptimisticLockBindings() > 0 ) {
-			unsupportedReason = "Optimistic locking not supported on Milvus";
+			throw new UnsupportedOperationException( "Optimistic locking not supported on Milvus" );
 		}
 		else if ( tableUpdate.getWhereFragment() != null ) {
-			unsupportedReason = "Non-id predicates are not supported for updates on Milvus";
+			throw new UnsupportedOperationException( "Non-id predicates are not supported for updates on Milvus" );
 		}
 		else if ( tableUpdate.getNumberOfReturningColumns() > 0 ) {
-			unsupportedReason = "Returning clause is not supported for updates on Milvus";
-		}
-		else {
-			unsupportedReason = null;
-		}
-		if ( unsupportedReason != null ) {
-			// Hibernate ORM creates these statements eagerly, so fail on execution instead
-			final MilvusUpsert unsupported = new MilvusUpsert();
-			unsupported.setCollectionName( tableUpdate.getMutatingTable().getTableName() );
-			unsupported.setData( List.of() );
-			unsupported.setUnsupportedReason( unsupportedReason );
-			milvusStatement = unsupported;
-			finishStatement();
-			return;
+			throw new UnsupportedOperationException( "Returning clause is not supported for updates on Milvus" );
 		}
 
 		getCurrentClauseStack().push( Clause.UPDATE );

@@ -151,18 +151,19 @@ public class Neo4jSqlAstTranslator<T extends JdbcOperation> extends AbstractSqlA
 		if ( root.isVirtual() ) {
 			for ( TableGroupJoin tableGroupJoin : root.getTableGroupJoins() ) {
 				addAdditionalWherePredicate( tableGroupJoin.getPredicate() );
-				renderFromClauseRoot( tableGroupJoin.getJoinedGroup(), separator );
+				separator = renderFromClauseRoot( tableGroupJoin.getJoinedGroup(), separator );
 			}
 			for ( TableGroupJoin tableGroupJoin : root.getNestedTableGroupJoins() ) {
 				addAdditionalWherePredicate( tableGroupJoin.getPredicate() );
-				renderFromClauseRoot( tableGroupJoin.getJoinedGroup(), separator );
+				separator = renderFromClauseRoot( tableGroupJoin.getJoinedGroup(), separator );
 			}
 		}
 		else if ( root.isInitialized() ) {
 			appendSql( separator );
 			renderRootTableGroup( root, null );
+			separator = COMMA_SEPARATOR;
 		}
-		return ",";
+		return separator;
 	}
 
 	protected boolean renderNamedTableReference(NamedTableReference tableReference, LockMode lockMode) {
@@ -339,7 +340,6 @@ public class Neo4jSqlAstTranslator<T extends JdbcOperation> extends AbstractSqlA
 		}
 	}
 
-
 	private void renderRootTableGroup(TableGroup tableGroup, List<TableGroupJoin> tableGroupJoinCollector) {
 		final LockMode effectiveLockMode = determineRootTableGroupLockMode( tableGroup );
 		renderPrimaryTableReference( tableGroup, effectiveLockMode );
@@ -358,8 +358,9 @@ public class Neo4jSqlAstTranslator<T extends JdbcOperation> extends AbstractSqlA
 			processTableGroupJoins( tableGroup );
 		}
 		if ( tableGroup.getModelPart() instanceof EntityPersister persister ) {
-			for ( String querySpace : (String[]) persister.getQuerySpaces() ) {
-				registerAffectedTable( querySpace );
+			final String[] querySpaces = (String[]) persister.getQuerySpaces();
+			for ( int i = 0; i < querySpaces.length; i++ ) {
+				registerAffectedTable( querySpaces[i] );
 			}
 		}
 	}
