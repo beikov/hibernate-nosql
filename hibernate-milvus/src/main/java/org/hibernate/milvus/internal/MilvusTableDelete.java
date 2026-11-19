@@ -30,7 +30,7 @@ public class MilvusTableDelete extends TableDeleteStandard {
 	@Override
 	public void accept(SqlAstWalker walker) {
 		if ( walker instanceof MilvusSqlAstTranslator<?> translator ) {
-			translator.renderMilvusTableDelete( this );
+			translator.renderStandardTableDelete( this );
 		}
 		else {
 			super.accept( walker );

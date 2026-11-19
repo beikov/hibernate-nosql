@@ -11,6 +11,7 @@ import org.hibernate.annotations.SoftDeleteType;
 import org.hibernate.boot.spi.MetadataBuildingContext;
 import org.hibernate.boot.spi.MetadataImplementor;
 import org.hibernate.collection.spi.CollectionSemantics;
+import org.hibernate.engine.FetchStyle;
 import org.hibernate.jdbc.Expectation;
 import org.hibernate.mapping.Bag;
 import org.hibernate.mapping.Collection;
@@ -62,6 +63,16 @@ public final class MilvusBag extends Bag {
 	}
 
 	// Delegate the rest of the methods
+
+	@Override
+	public void setFetchStyle(FetchStyle fetchStyle) {
+		original.setFetchStyle( fetchStyle );
+	}
+
+	@Override
+	public FetchStyle getFetchStyle() {
+		return original.getFetchStyle();
+	}
 
 	@Override
 	public CollectionType getDefaultCollectionType() {

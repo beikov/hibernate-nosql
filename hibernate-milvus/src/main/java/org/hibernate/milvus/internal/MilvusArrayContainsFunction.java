@@ -5,6 +5,7 @@
 package org.hibernate.milvus.internal;
 
 import org.hibernate.dialect.function.array.ArrayContainsUnnestFunction;
+import org.hibernate.internal.log.DeprecationLogger;
 import org.hibernate.metamodel.mapping.JdbcMapping;
 import org.hibernate.metamodel.mapping.JdbcMappingContainer;
 import org.hibernate.metamodel.model.domain.ReturnableType;
@@ -14,13 +15,18 @@ import org.hibernate.sql.ast.spi.SqlAstNode;
 import org.hibernate.sql.ast.spi.query.expression.Expression;
 import org.hibernate.type.BasicPluralType;
 import org.hibernate.type.spi.TypeConfiguration;
+import org.jboss.logging.Logger;
 
+import java.lang.invoke.MethodHandles;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * Special array includes implementation that uses the Milvus {@code array_contains} operator.
  */
 public class MilvusArrayContainsFunction extends ArrayContainsUnnestFunction {
+
+	private static final DeprecationLogger LOG = Logger.getMessageLogger( MethodHandles.lookup(), DeprecationLogger.class, MilvusArrayContainsFunction.class.getName(), Locale.ROOT );
 
 	public MilvusArrayContainsFunction(boolean nullable, TypeConfiguration typeConfiguration) {
 		super( nullable, typeConfiguration );
@@ -37,6 +43,7 @@ public class MilvusArrayContainsFunction extends ArrayContainsUnnestFunction {
 		final JdbcMappingContainer needleTypeContainer = needleExpression.getExpressionType();
 		final JdbcMapping needleType = needleTypeContainer == null ? null : needleTypeContainer.getSingleJdbcMapping();
 		if ( needleType == null || needleType instanceof BasicPluralType<?, ?> ) {
+			LOG.deprecatedArrayContainsWithArray();
 			if ( !nullable ) {
 				sqlAppender.append( "(not array_contains(" );
 				needleExpression.accept( walker );

@@ -1842,7 +1842,7 @@ public class MilvusSqlAstTranslator<T extends JdbcOperation> extends AbstractSql
 	 * The base translator offers no hook to render standard table deletes,
 	 * which is why {@link MilvusTableDelete} dispatches directly to this method.
 	 */
-	void renderMilvusTableDelete(TableDeleteStandard tableDelete) {
+	void renderStandardTableDelete(TableDeleteStandard tableDelete) {
 		if ( tableDelete.getNumberOfOptimisticLockBindings() > 0 ) {
 			// Hibernate ORM creates these statements eagerly, so fail on execution instead
 			final MilvusDelete unsupported = new MilvusDelete();

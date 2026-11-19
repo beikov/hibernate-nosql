@@ -30,7 +30,7 @@ public class Neo4jTableDelete extends TableDeleteStandard {
 	@Override
 	public void accept(SqlAstWalker walker) {
 		if ( walker instanceof Neo4jSqlAstTranslator<?> translator ) {
-			translator.renderNeo4jTableDelete( this );
+			translator.renderStandardTableDelete( this );
 		}
 		else {
 			super.accept( walker );

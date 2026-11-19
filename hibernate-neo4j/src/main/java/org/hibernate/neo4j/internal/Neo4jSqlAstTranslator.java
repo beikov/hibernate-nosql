@@ -702,7 +702,7 @@ public class Neo4jSqlAstTranslator<T extends JdbcOperation> extends AbstractSqlA
 	 * Renders a standard table delete. The base translator does not offer a hook for this, which is
 	 * why {@link Neo4jTableDelete} dispatches directly to this method.
 	 */
-	void renderNeo4jTableDelete(TableDeleteStandard tableDelete) {
+	void renderStandardTableDelete(TableDeleteStandard tableDelete) {
 		getCurrentClauseStack().push( Clause.DELETE );
 		try {
 			applySqlComment( tableDelete.getMutationComment() );

@@ -108,9 +108,10 @@ public class MilvusListSemantics<E> implements CollectionSemantics<List<E>, E> {
 			CollectionPart.Nature partNature) {
 		final LinkedHashSet<Object> copy = new LinkedHashSet<>();
 		if ( partNature == CollectionPart.Nature.INDEX ) {
-			final int listIndexBase = collectionDescriptor.getAttributeMapping().getIndexMetadata().getListIndexBase();
-			final int size = rawCollection instanceof List<?> list ? list.size() : 0;
-			for ( int i = 0; i < size; i++ ) {
+			final int listIndexBase =
+					collectionDescriptor.getAttributeMapping()
+							.getIndexMetadata().getListIndexBase();
+			for ( int i = 0; i < collectionSize( rawCollection ); i++ ) {
 				copy.add( listIndexBase + i );
 			}
 		}
@@ -121,8 +122,12 @@ public class MilvusListSemantics<E> implements CollectionSemantics<List<E>, E> {
 	}
 
 	@Override
-	public Object copy(Object rawCollection, CollectionPersister collectionDescriptor) {
-		return rawCollection instanceof List<?> list ? new java.util.ArrayList<>( list ) : rawCollection;
+	public Object copy(
+			Object rawCollection,
+			CollectionPersister collectionDescriptor) {
+		return rawCollection instanceof List<?> list
+				? instantiateWithElements( collectionSize( rawCollection ), collectionDescriptor, list )
+				: rawCollection;
 	}
 
 	@Override

@@ -27,6 +27,10 @@ import java.util.Arrays;
 import java.util.Iterator;
 import java.util.function.Consumer;
 
+import static java.lang.reflect.Array.get;
+import static java.lang.reflect.Array.getLength;
+import static java.lang.reflect.Array.newInstance;
+
 public class MilvusArraySemantics<E> implements CollectionSemantics<E[], E> {
 	/**
 	 * Singleton access
@@ -138,37 +142,40 @@ public class MilvusArraySemantics<E> implements CollectionSemantics<E[], E> {
 			CollectionPersister collectionDescriptor,
 			CollectionPart.Nature partNature) {
 		final LinkedHashSet<Object> copy = new LinkedHashSet<>();
-		final boolean isArray = rawCollection != null && rawCollection.getClass().isArray();
-		final int length = isArray ? java.lang.reflect.Array.getLength( rawCollection ) : 0;
+		final int length = collectionSize( rawCollection );
 		if ( partNature == CollectionPart.Nature.INDEX ) {
-			final int listIndexBase = collectionDescriptor.getAttributeMapping().getIndexMetadata().getListIndexBase();
+			final int listIndexBase =
+					collectionDescriptor.getAttributeMapping()
+							.getIndexMetadata().getListIndexBase();
 			for ( int i = 0; i < length; i++ ) {
 				copy.add( listIndexBase + i );
 			}
 		}
-		else if ( isArray ) {
+		else if ( rawCollection != null && rawCollection.getClass().isArray() ) {
 			for ( int i = 0; i < length; i++ ) {
-				copy.add( java.lang.reflect.Array.get( rawCollection, i ) );
+				copy.add( get( rawCollection, i ) );
 			}
 		}
 		return copy;
 	}
 
 	@Override
-	public Object copy(Object rawCollection, CollectionPersister collectionDescriptor) {
+	public Object copy(
+			Object rawCollection,
+			CollectionPersister collectionDescriptor) {
 		if ( rawCollection != null && rawCollection.getClass().isArray() ) {
-			final int length = java.lang.reflect.Array.getLength( rawCollection );
-			final Object copy = java.lang.reflect.Array.newInstance( rawCollection.getClass().getComponentType(), length );
+			final int length = collectionSize( rawCollection );
+			final Object copy = newInstance( rawCollection.getClass().getComponentType(), length );
 			System.arraycopy( rawCollection, 0, copy, 0, length );
 			return copy;
 		}
-		return rawCollection;
+		else {
+			return rawCollection;
+		}
 	}
 
 	@Override
 	public int collectionSize(Object rawCollection) {
-		return rawCollection != null && rawCollection.getClass().isArray()
-				? java.lang.reflect.Array.getLength( rawCollection )
-				: 0;
+		return rawCollection != null && rawCollection.getClass().isArray() ? getLength( rawCollection ) : 0;
 	}
 }
